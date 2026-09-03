@@ -33,6 +33,7 @@ import {
 import './styles.css';
 import { AuthProvider, AuthScreen, FirebaseStatusBadge, useAuthSession } from './auth';
 import { LoginPage } from './LoginPage';
+import { LoadingScreen } from './LoadingScreen';
 import { FirestoreService } from './lib/firestoreService';
 
 const today = new Date();
@@ -66,14 +67,36 @@ function App() {
 }
 
 function AppContent() {
-  const { user, session, loading, configured, signOut, continueAsGuest } = useAuthSession();
-  if (loading) {
-    return <div className="app-loading">Connecting to Firebase Cloud Firestore…</div>;
-  }
-  
+  const { user, session, loading, configured, signOut } = useAuthSession();
   const currentUser = user || session?.user || null;
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [sessionEstablished, setSessionEstablished] = useState(false);
+
+  useEffect(() => {
+    if (currentUser && !sessionEstablished) {
+      setIsTransitioning(true);
+      setSessionEstablished(true);
+    } else if (!currentUser) {
+      setSessionEstablished(false);
+      setIsTransitioning(false);
+    }
+  }, [currentUser, sessionEstablished]);
+
+  const handleLoginStart = () => {
+    setIsTransitioning(true);
+  };
+
+  if (loading || (currentUser && isTransitioning)) {
+    return (
+      <LoadingScreen
+        user={currentUser}
+        onFinished={() => setIsTransitioning(false)}
+      />
+    );
+  }
+
   if (!currentUser) {
-    return <LoginPage onContinueAsGuest={continueAsGuest} />;
+    return <LoginPage onLoginStart={handleLoginStart} />;
   }
 
   return <Workspace user={currentUser} authConfigured={configured} signOut={signOut} />;

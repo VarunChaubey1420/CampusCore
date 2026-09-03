@@ -10,11 +10,26 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from './lib/firebase';
 import { GraduationCap, Sparkles, CheckCircle2, ShieldCheck, Mail, Lock, User, BookOpen } from 'lucide-react';
 
+export const STATIC_DEFAULT_USER = {
+  id: 'static-varun-chaubey',
+  uid: 'static-varun-chaubey',
+  email: 'varunchaubey757@gmail.com',
+  user_metadata: {
+    display_name: 'Varun Chaubey',
+    full_name: 'Varun Chaubey',
+    branch: 'Computer Science & Engineering',
+    year: 'Semester 6'
+  }
+};
+
 const AuthContext = createContext({
   user: null,
   session: null,
   loading: false,
   configured: true,
+  isGuest: false,
+  continueAsGuest: () => {},
+  loginWithStaticCredentials: async () => {},
   signUp: async () => {},
   signIn: async () => {},
   signOut: async () => {},
@@ -27,6 +42,18 @@ export function AuthProvider({ children }) {
   const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
+    // Check local static login session first
+    const cachedStatic = localStorage.getItem('campuscore_static_user');
+    if (cachedStatic) {
+      try {
+        const parsed = JSON.parse(cachedStatic);
+        setUser(parsed);
+        setIsGuest(false);
+      } catch (e) {
+        console.warn('Failed parsing cached static user', e);
+      }
+    }
+
     if (isFirebaseConfigured && auth) {
       const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
         if (fbUser) {
@@ -65,20 +92,55 @@ export function AuthProvider({ children }) {
           setUser(studentUser);
           setIsGuest(false);
         } else {
-          setUser(null);
+          // If no Firebase user, check if we have a cached static session
+          const cached = localStorage.getItem('campuscore_static_user');
+          if (cached) {
+            try {
+              setUser(JSON.parse(cached));
+              setIsGuest(false);
+            } catch {
+              setUser(null);
+            }
+          } else {
+            setUser(null);
+          }
         }
         setLoading(false);
       });
 
       return () => unsubscribe();
     } else {
-      setUser(null);
       setLoading(false);
     }
   }, []);
 
+  const loginWithStaticCredentials = async (email = 'varunchaubey757@gmail.com', password = 'password123', metadata = {}) => {
+    if (password && password !== 'password123') {
+      throw new Error('Incorrect password. Please verify your credentials.');
+    }
+    const staticUser = {
+      id: 'static-varun-chaubey',
+      uid: 'static-varun-chaubey',
+      email: email || 'varunchaubey757@gmail.com',
+      user_metadata: {
+        display_name: metadata.full_name || 'Varun Chaubey',
+        full_name: metadata.full_name || 'Varun Chaubey',
+        branch: metadata.branch || 'Computer Science & Engineering',
+        year: metadata.year || 'Semester 6'
+      }
+    };
+    try {
+      localStorage.setItem('campuscore_static_user', JSON.stringify(staticUser));
+    } catch (e) {
+      console.warn('Could not cache static user in localStorage', e);
+    }
+    setUser(staticUser);
+    setIsGuest(false);
+    return staticUser;
+  };
+
   const continueAsGuest = () => {
-    setUser({
+    const guestUser = {
       id: 'demo_student_varun',
       uid: 'demo_student_varun',
       email: 'varunchaubey757@gmail.com',
@@ -88,50 +150,88 @@ export function AuthProvider({ children }) {
         branch: 'Computer Science & Engineering',
         year: 'Semester 6'
       }
-    });
+    };
+    try {
+      localStorage.setItem('campuscore_static_user', JSON.stringify(guestUser));
+    } catch (e) {
+      // ignore
+    }
+    setUser(guestUser);
     setIsGuest(true);
   };
 
   const signUp = async (email, password, metadata = {}) => {
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = (email || '').trim().toLowerCase();
     const fullName = metadata.full_name || cleanEmail.split('@')[0];
 
+    // Check if static credentials
+    if (cleanEmail === 'varunchaubey757@gmail.com' || cleanEmail === 'varunchaubey757@gamil.com') {
+      return await loginWithStaticCredentials(cleanEmail, password, metadata);
+    }
+
     if (isFirebaseConfigured && auth) {
-      const res = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      if (res.user) {
-        await fbUpdateProfile(res.user, { displayName: fullName });
-        if (db) {
-          try {
-            await setDoc(doc(db, 'users', res.user.uid), {
-              id: res.user.uid,
-              email: cleanEmail,
-              fullName: fullName,
-              branch: metadata.branch || 'Computer Science & Engineering',
-              year: metadata.year || 'Semester 6',
-              createdAt: Date.now()
-            });
-          } catch (e) {
-            console.warn('Error saving user doc in Firestore', e);
+      try {
+        const res = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        if (res.user) {
+          await fbUpdateProfile(res.user, { displayName: fullName });
+          if (db) {
+            try {
+              await setDoc(doc(db, 'users', res.user.uid), {
+                id: res.user.uid,
+                email: cleanEmail,
+                fullName: fullName,
+                branch: metadata.branch || 'Computer Science & Engineering',
+                year: metadata.year || 'Semester 6',
+                createdAt: Date.now()
+              });
+            } catch (e) {
+              console.warn('Error saving user doc in Firestore', e);
+            }
           }
+          setIsGuest(false);
+          return res.user;
         }
-        setIsGuest(false);
-        return res.user;
+      } catch (err) {
+        console.warn('Firebase createUser failed, falling back to static profile:', err);
+        return await loginWithStaticCredentials(cleanEmail, password, metadata);
       }
     }
+
+    return await loginWithStaticCredentials(cleanEmail, password, metadata);
   };
 
   const signIn = async (email, password) => {
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    // Static login validation for Varun Chaubey
+    if (cleanEmail === 'varunchaubey757@gmail.com' || cleanEmail === 'varunchaubey757@gamil.com') {
+      if (password !== 'password123') {
+        throw new Error('Incorrect password. Please verify your credentials.');
+      }
+      return await loginWithStaticCredentials(cleanEmail, password);
+    }
+
     if (isFirebaseConfigured && auth) {
       const res = await signInWithEmailAndPassword(auth, cleanEmail, password);
       setIsGuest(false);
       return res.user;
     }
+
+    throw new Error('Account not found. Please register or verify your email.');
   };
 
   const signOut = async () => {
+    try {
+      localStorage.removeItem('campuscore_static_user');
+    } catch (e) {
+      // ignore
+    }
     if (isFirebaseConfigured && auth) {
-      await fbSignOut(auth);
+      try {
+        await fbSignOut(auth);
+      } catch (e) {
+        console.warn('Firebase signOut error:', e);
+      }
     }
     setUser(null);
     setIsGuest(false);
@@ -146,6 +246,7 @@ export function AuthProvider({ children }) {
         configured: isFirebaseConfigured,
         isGuest,
         continueAsGuest,
+        loginWithStaticCredentials,
         signUp,
         signIn,
         signOut
@@ -173,17 +274,12 @@ export function FirebaseStatusBadge() {
   );
 }
 
-// Backward compatibility alias
-export function SupabaseSetupBanner() {
-  return null;
-}
-
 export function AuthScreen() {
-  const { signIn, signUp } = useAuthSession();
+  const { signIn, signUp, loginWithStaticCredentials } = useAuthSession();
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('varunchaubey757@gmail.com');
+  const [password, setPassword] = useState('password123');
+  const [fullName, setFullName] = useState('Varun Chaubey');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -236,7 +332,7 @@ export function AuthScreen() {
             Student Email
             <input
               type="email"
-              placeholder="e.g. varun@campus.edu"
+              placeholder="varunchaubey757@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

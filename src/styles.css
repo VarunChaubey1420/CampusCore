@@ -2602,3 +2602,354 @@ justify-content:center}
   color: #16a34a;
 }
 
+.btn-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================================
+   Loading Screen Between Login and Dashboard
+   ========================================================= */
+.loading-screen-backdrop {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 15%, #eff6ff 0%, #f8fafc 60%, #f1f5f9 100%);
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  transition: opacity 0.3s ease-out;
+}
+
+.loading-screen-backdrop.fade-out {
+  opacity: 0;
+}
+
+.loading-screen-glow {
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.12) 0%, rgba(37, 99, 235, 0) 70%);
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+.loading-screen-card {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 440px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 36px 32px;
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.05),
+    0 20px 40px -10px rgba(37, 99, 235, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: loadingCardEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+
+.loading-screen-card.card-fade-out {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+}
+
+@keyframes loadingCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Emblem & Orbit Animation */
+.loading-emblem-wrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.loading-emblem-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: rgba(37, 99, 235, 0.15);
+  animation: emblemPulse 2s ease-in-out infinite;
+}
+
+@keyframes emblemPulse {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.9;
+  }
+}
+
+.loading-emblem-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px dashed rgba(37, 99, 235, 0.4);
+  animation: emblemSpin 10s linear infinite;
+}
+
+@keyframes emblemSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-emblem-core {
+  position: relative;
+  z-index: 2;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.loading-emblem-icon {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+/* Header Text */
+.loading-text-header {
+  margin-bottom: 24px;
+}
+
+.loading-brand-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1d4ed8;
+  margin-bottom: 10px;
+}
+
+.loading-greeting {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+.loading-subcopy {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  font-weight: 500;
+}
+
+/* Progress Bar */
+.loading-progress-container {
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.loading-progress-track {
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.loading-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
+  /* Smooth 60fps tracking without stepped transition lag */
+  transition: width 0.05s linear;
+  will-change: width;
+}
+
+.loading-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 50%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
+  animation: progressShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes progressShimmer {
+  0% {
+    transform: translateX(-150%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.loading-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.loading-current-action {
+  color: #475569;
+  font-weight: 500;
+}
+
+.loading-percentage {
+  font-weight: 700;
+  color: #2563eb;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stepped Status Rows */
+.loading-steps-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 22px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.loading-step-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.loading-step-row.completed {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.loading-step-row.active {
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  color: #1d4ed8;
+}
+
+.loading-step-row.pending {
+  opacity: 0.5;
+  color: #64748b;
+}
+
+.loading-step-status-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-check {
+  color: #16a34a;
+}
+
+.step-spinner {
+  color: #2563eb;
+  animation: spin 0.9s linear infinite;
+}
+
+.step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.loading-step-label-wrapper {
+  flex: 1;
+  text-align: left;
+}
+
+.loading-step-label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.loading-step-row.active .loading-step-label {
+  font-weight: 600;
+}
+
+.loading-step-type-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.loading-step-row.active .loading-step-type-icon {
+  color: #2563eb;
+}
+
+/* Footer info */
+.loading-footer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+

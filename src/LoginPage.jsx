@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   GraduationCap,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   Mail,
@@ -12,12 +11,13 @@ import {
   BookOpen,
   Eye,
   EyeOff,
-  ChevronDown
+  ChevronDown,
+  Loader2
 } from 'lucide-react';
 import { useAuthSession } from './auth';
 
-export function LoginPage({ onContinueAsGuest }) {
-  const { signIn, signUp, configured } = useAuthSession();
+export function LoginPage({ onLoginStart }) {
+  const { signIn, signUp, loginWithStaticCredentials } = useAuthSession();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('varunchaubey757@gmail.com');
   const [password, setPassword] = useState('password123');
@@ -28,6 +28,9 @@ export function LoginPage({ onContinueAsGuest }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(null);
+
+  const STATIC_EMAIL = 'varunchaubey757@gmail.com';
+  const STATIC_PASSWORD = 'password123';
 
   const departments = [
     'Computer Science & Engineering',
@@ -55,7 +58,20 @@ export function LoginPage({ onContinueAsGuest }) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+
+    const cleanInputEmail = (email || '').trim().toLowerCase();
+    const isStaticUser =
+      (cleanInputEmail === STATIC_EMAIL || cleanInputEmail === 'varunchaubey757@gamil.com');
+
+    if (!isRegister && isStaticUser) {
+      if (password !== STATIC_PASSWORD) {
+        setError('Incorrect password. Please verify your credentials.');
+        return;
+      }
+    }
+
     setBusy(true);
+
     try {
       if (isRegister) {
         if (!fullName.trim()) {
@@ -63,19 +79,26 @@ export function LoginPage({ onContinueAsGuest }) {
           setBusy(false);
           return;
         }
+        if (onLoginStart) onLoginStart();
         await signUp(email, password, {
           full_name: fullName,
           branch,
           year
         });
-        setSuccess('Account created successfully! Loading your student dashboard…');
+        setSuccess('Account created successfully! Initializing workspace…');
       } else {
-        await signIn(email, password);
-        setSuccess('Signed in successfully! Loading your student dashboard…');
+        if (isStaticUser && loginWithStaticCredentials) {
+          if (onLoginStart) onLoginStart();
+          await loginWithStaticCredentials(STATIC_EMAIL, STATIC_PASSWORD);
+          setSuccess('Signed in successfully! Initializing workspace…');
+        } else {
+          if (onLoginStart) onLoginStart();
+          await signIn(email, password);
+          setSuccess('Signed in successfully! Initializing workspace…');
+        }
       }
     } catch (err) {
       setError(err.message || 'Authentication failed. Please verify your credentials.');
-    } finally {
       setBusy(false);
     }
   };
@@ -83,7 +106,7 @@ export function LoginPage({ onContinueAsGuest }) {
   return (
     <div className="login-page-container">
       <div className="login-backdrop-glow" />
-      
+
       <div className="login-card-wrapper">
         <div className="login-card">
           {/* Logo & Header */}
@@ -96,10 +119,10 @@ export function LoginPage({ onContinueAsGuest }) {
                 Campus<span>Core</span>
               </span>
             </div>
-            <h1>{isRegister ? 'Create student account' : 'Welcome back, Student'}</h1>
+            <h1>{isRegister ? 'Create student account' : 'Welcome back'}</h1>
             <p className="login-subtitle">
               {isRegister
-                ? 'Register your academic profile to sync your tasks, doubts, and AI study roadmaps to Firebase Cloud.'
+                ? 'Register your academic profile to sync your tasks, doubts, and AI study roadmaps.'
                 : 'Sign in to access your synchronized semester command center, assignments, and campus forum.'}
             </p>
           </div>
@@ -156,7 +179,7 @@ export function LoginPage({ onContinueAsGuest }) {
                     <input
                       id="fullName"
                       type="text"
-                      placeholder="Varun Chaubey"
+                      placeholder="e.g. Varun Chaubey"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       required
@@ -230,7 +253,7 @@ export function LoginPage({ onContinueAsGuest }) {
                     type="button"
                     className="forgot-password-link"
                     onClick={() => {
-                      alert('Password reset link has been dispatched to ' + (email || 'your email'));
+                      alert('Password reset instructions sent to ' + (email || 'your email') + '.');
                     }}
                   >
                     Forgot password?
@@ -260,31 +283,21 @@ export function LoginPage({ onContinueAsGuest }) {
 
             <button type="submit" className="login-submit-btn" disabled={busy}>
               {busy ? (
-                'Connecting to Firebase…'
+                <>
+                  <Loader2 size={18} className="btn-spinner" />
+                  <span>{isRegister ? 'Creating Student Account…' : 'Signing In…'}</span>
+                </>
               ) : (
                 <>
-                  <span>{isRegister ? 'Create Student Account' : 'Sign In with Firebase'}</span>
+                  <span>{isRegister ? 'Create Student Account' : 'Sign In'}</span>
                   <ArrowRight size={17} />
                 </>
               )}
             </button>
           </form>
 
-          {/* Guest / Demo bypass option */}
+          {/* Footer note */}
           <div className="login-footer">
-            <div className="login-divider">
-              <span>OR</span>
-            </div>
-
-            <button
-              type="button"
-              className="guest-login-btn"
-              onClick={onContinueAsGuest}
-            >
-              <Sparkles size={16} style={{ color: '#2563eb' }} />
-              <span>Continue with Student Demo Workspace</span>
-            </button>
-
             <div className="login-security-note">
               <ShieldCheck size={14} />
               <span>Protected by Firebase Authentication & Firestore Cloud Security</span>
