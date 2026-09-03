@@ -27,5 +27,10 @@ service cloud.firestore {
     match /study_plans/{planId} {
       allow read, write: if true;
     }
+
+    // AI Chatbot Workload Sessions
+    match /chat_sessions/{sessionId} {
+      allow read, write: if true;
+    }
   }
 }

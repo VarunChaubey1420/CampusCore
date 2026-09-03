@@ -16,123 +16,37 @@ import { db, isFirebaseConfigured } from './firebase';
 const TASKS_COLLECTION = 'tasks';
 const DOUBTS_COLLECTION = 'doubts';
 const PLANS_COLLECTION = 'study_plans';
+const CHAT_COLLECTION = 'chat_sessions';
 
-const DEFAULT_INITIAL_DOUBTS = [
-  {
-    id: 'doubt_1',
-    title: 'How does backpropagation update weights?',
-    description: 'I understand the forward pass, but I am confused about calculating gradients layer by layer.',
-    subject: 'Machine Learning',
-    semester: 'Semester 6',
-    author: 'Riya Sharma',
-    initials: 'RS',
-    time: '12 min ago',
-    createdAt: Date.now() - 12 * 60 * 1000,
-    votes: 12,
-    voterIds: ['demo_voter_1', 'demo_voter_2'],
-    answers: [
-      {
-        id: 'ans_11',
-        author: 'Arjun Mehta',
-        initials: 'AM',
-        text: 'Think of it as applying the chain rule backwards. Each layer passes the gradient of the loss to the previous layer, which tells us how much every weight contributed to the error.',
-        votes: 8,
-        voterIds: ['demo_voter_1'],
-        accepted: true,
-        createdAt: Date.now() - 10 * 60 * 1000
-      }
-    ],
-    resolved: false
-  },
-  {
-    id: 'doubt_2',
-    title: 'Difference between a process and a thread',
-    description: 'Could someone explain this with a practical operating systems example?',
-    subject: 'Operating Systems',
-    semester: 'Semester 4',
-    author: 'Kunal Shah',
-    initials: 'KS',
-    time: '38 min ago',
-    createdAt: Date.now() - 38 * 60 * 1000,
-    votes: 7,
-    voterIds: ['demo_voter_3'],
-    answers: [],
-    resolved: false
-  },
-  {
-    id: 'doubt_3',
-    title: 'Normalisation forms — quick revision?',
-    description: 'Looking for a clear way to remember 1NF, 2NF and 3NF before the quiz.',
-    subject: 'Database Systems',
-    semester: 'Semester 4',
-    author: 'Meera Iyer',
-    initials: 'MI',
-    time: '1 hr ago',
-    createdAt: Date.now() - 60 * 60 * 1000,
-    votes: 19,
-    voterIds: ['demo_voter_1', 'demo_voter_2', 'demo_voter_4'],
-    answers: [
-      {
-        id: 'ans_31',
-        author: 'Neha Kapoor',
-        initials: 'NK',
-        text: 'A simple mnemonic: atomic values, no partial dependency, no transitive dependency. Work through one sample table and it will click.',
-        votes: 15,
-        voterIds: ['demo_voter_1', 'demo_voter_2'],
-        accepted: true,
-        createdAt: Date.now() - 50 * 60 * 1000
-      }
-    ],
-    resolved: true
-  }
+const LEGACY_PRESET_TASK_IDS = ['task_1', 'task_2', 'task_3'];
+const LEGACY_PRESET_TITLES = [
+  'Finish DBMS assignment',
+  'Review neural networks notes',
+  'Submit lab record'
 ];
 
-const DEFAULT_INITIAL_TASKS = [
-  {
-    id: 'task_1',
-    title: 'Finish DBMS assignment',
-    description: 'Complete SQL schema normalization and complex subqueries.',
-    due: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-    category: 'Assignment',
-    priority: 'High',
-    status: 'In progress',
-    source: 'Manual',
-    createdAt: Date.now() - 86400000
-  },
-  {
-    id: 'task_2',
-    title: 'Review neural networks notes',
-    description: 'Review gradient descent and activation functions.',
-    due: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
-    category: 'Study',
-    priority: 'Medium',
-    status: 'To do',
-    source: 'Study Plan',
-    createdAt: Date.now() - 172800000
-  },
-  {
-    id: 'task_3',
-    title: 'Submit lab record',
-    description: 'Operating systems scheduling algorithms code and screenshots.',
-    due: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
-    category: 'Practical',
-    priority: 'Low',
-    status: 'To do',
-    source: 'Manual',
-    createdAt: Date.now() - 259200000
-  }
+const LEGACY_PRESET_DOUBT_IDS = ['doubt_1', 'doubt_2', 'doubt_3'];
+const LEGACY_PRESET_DOUBT_TITLES = [
+  'How does backpropagation update weights?',
+  'Difference between a process and a thread',
+  'Normalisation forms — quick revision?'
 ];
 
 export const FirestoreService = {
   // TASKS MANAGEMENT
   subscribeTasks(userId, callback) {
+    const isLegacyTask = (t) =>
+      LEGACY_PRESET_TASK_IDS.includes(t.id) || LEGACY_PRESET_TITLES.includes(t.title);
+
     if (!isFirebaseConfigured || !db) {
       const localKey = userId ? `cc-${userId}-tasks` : 'cc-preview-tasks';
       try {
-        const saved = JSON.parse(localStorage.getItem(localKey)) || DEFAULT_INITIAL_TASKS;
-        callback(saved);
+        const saved = JSON.parse(localStorage.getItem(localKey)) || [];
+        const filtered = Array.isArray(saved) ? saved.filter(t => !isLegacyTask(t)) : [];
+        localStorage.setItem(localKey, JSON.stringify(filtered));
+        callback(filtered);
       } catch {
-        callback(DEFAULT_INITIAL_TASKS);
+        callback([]);
       }
       return () => {};
     }
@@ -141,47 +55,49 @@ export const FirestoreService = {
       const tasksCol = collection(db, TASKS_COLLECTION);
       const unsubscribe = onSnapshot(
         tasksCol,
-        (snapshot) => {
+        async (snapshot) => {
           if (snapshot.empty) {
-            // Seed initial tasks to Firestore so user sees starter data immediately
-            DEFAULT_INITIAL_TASKS.forEach(async (t) => {
-              try {
-                await setDoc(doc(db, TASKS_COLLECTION, t.id), {
-                  ...t,
-                  userId: userId || 'public'
-                });
-              } catch (e) {
-                console.warn('Seeding task error', e);
-              }
-            });
-            callback(DEFAULT_INITIAL_TASKS);
+            callback([]);
             return;
           }
 
           const tasks = [];
-          snapshot.forEach((docSnap) => {
+          for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
-            // Include user specific tasks or public demo tasks
+            const id = docSnap.id;
+
+            // If this is one of the legacy pre-fixed tasks, auto-delete it from Firestore
+            if (LEGACY_PRESET_TASK_IDS.includes(id) || LEGACY_PRESET_TITLES.includes(data.title)) {
+              try {
+                await deleteDoc(doc(db, TASKS_COLLECTION, id));
+              } catch (delErr) {
+                console.warn('Auto-removing legacy preset task from Firestore:', delErr);
+              }
+              continue;
+            }
+
+            // Include user specific tasks or public tasks
             if (!userId || data.userId === userId || data.userId === 'public' || !data.userId) {
               tasks.push({
                 id: docSnap.id,
                 ...data
               });
             }
-          });
+          }
 
           // Sort by creation time desc
           tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-          callback(tasks.length > 0 ? tasks : DEFAULT_INITIAL_TASKS);
+          callback(tasks);
         },
         (error) => {
           console.warn('Firestore tasks snapshot error:', error);
           const localKey = userId ? `cc-${userId}-tasks` : 'cc-preview-tasks';
           try {
-            const saved = JSON.parse(localStorage.getItem(localKey)) || DEFAULT_INITIAL_TASKS;
-            callback(saved);
+            const saved = JSON.parse(localStorage.getItem(localKey)) || [];
+            const filtered = Array.isArray(saved) ? saved.filter(t => !isLegacyTask(t)) : [];
+            callback(filtered);
           } catch {
-            callback(DEFAULT_INITIAL_TASKS);
+            callback([]);
           }
         }
       );
@@ -221,7 +137,7 @@ export const FirestoreService = {
     const created = { id: localId, ...newTask };
     const localKey = userId ? `cc-${userId}-tasks` : 'cc-preview-tasks';
     try {
-      const existing = JSON.parse(localStorage.getItem(localKey)) || DEFAULT_INITIAL_TASKS;
+      const existing = JSON.parse(localStorage.getItem(localKey)) || [];
       localStorage.setItem(localKey, JSON.stringify([created, ...existing]));
     } catch (e) {
       console.error('Local task save error', e);
@@ -262,12 +178,17 @@ export const FirestoreService = {
 
   // DOUBTS FORUM MANAGEMENT
   subscribeDoubts(callback) {
+    const isLegacyDoubt = (d) =>
+      LEGACY_PRESET_DOUBT_IDS.includes(d.id) || LEGACY_PRESET_DOUBT_TITLES.includes(d.title);
+
     if (!isFirebaseConfigured || !db) {
       try {
-        const saved = JSON.parse(localStorage.getItem('cc-preview-doubts')) || DEFAULT_INITIAL_DOUBTS;
-        callback(saved);
+        const saved = JSON.parse(localStorage.getItem('cc-preview-doubts')) || [];
+        const filtered = Array.isArray(saved) ? saved.filter(d => !isLegacyDoubt(d)) : [];
+        localStorage.setItem('cc-preview-doubts', JSON.stringify(filtered));
+        callback(filtered);
       } catch {
-        callback(DEFAULT_INITIAL_DOUBTS);
+        callback([]);
       }
       return () => {};
     }
@@ -276,27 +197,32 @@ export const FirestoreService = {
       const doubtsCol = collection(db, DOUBTS_COLLECTION);
       const unsubscribe = onSnapshot(
         doubtsCol,
-        (snapshot) => {
+        async (snapshot) => {
           if (snapshot.empty) {
-            // Seed initial doubts to Firestore
-            DEFAULT_INITIAL_DOUBTS.forEach(async (d) => {
-              try {
-                await setDoc(doc(db, DOUBTS_COLLECTION, d.id), d);
-              } catch (e) {
-                console.warn('Seeding doubt error', e);
-              }
-            });
-            callback(DEFAULT_INITIAL_DOUBTS);
+            callback([]);
             return;
           }
 
           const doubts = [];
-          snapshot.forEach((docSnap) => {
+          for (const docSnap of snapshot.docs) {
+            const data = docSnap.data();
+            const id = docSnap.id;
+
+            // Auto-clean legacy preset doubts from Firestore
+            if (LEGACY_PRESET_DOUBT_IDS.includes(id) || LEGACY_PRESET_DOUBT_TITLES.includes(data.title)) {
+              try {
+                await deleteDoc(doc(db, DOUBTS_COLLECTION, id));
+              } catch (e) {
+                console.warn('Auto-removing legacy preset doubt error:', e);
+              }
+              continue;
+            }
+
             doubts.push({
               id: docSnap.id,
-              ...docSnap.data()
+              ...data
             });
-          });
+          }
 
           // Sort by creation time desc
           doubts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -305,10 +231,11 @@ export const FirestoreService = {
         (error) => {
           console.warn('Firestore doubts snapshot error:', error);
           try {
-            const saved = JSON.parse(localStorage.getItem('cc-preview-doubts')) || DEFAULT_INITIAL_DOUBTS;
-            callback(saved);
+            const saved = JSON.parse(localStorage.getItem('cc-preview-doubts')) || [];
+            const filtered = Array.isArray(saved) ? saved.filter(d => !isLegacyDoubt(d)) : [];
+            callback(filtered);
           } catch {
-            callback(DEFAULT_INITIAL_DOUBTS);
+            callback([]);
           }
         }
       );
@@ -321,14 +248,14 @@ export const FirestoreService = {
   },
 
   async addDoubt(user, doubtData) {
-    const authorName = user?.user_metadata?.display_name || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : 'Varun Chaubey');
-    const initials = authorName.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'VC';
+    const authorName = user?.user_metadata?.display_name || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : 'Student');
+    const initials = authorName.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'ST';
 
     const newDoubt = {
       title: doubtData.title.trim(),
       description: doubtData.description.trim(),
-      subject: doubtData.subject || 'Machine Learning',
-      semester: doubtData.semester || 'Semester 6',
+      subject: doubtData.subject || 'General',
+      semester: doubtData.semester || 'Semester 1',
       author: authorName,
       initials: initials,
       time: 'Just now',
@@ -354,7 +281,7 @@ export const FirestoreService = {
     const localId = 'doubt_' + Date.now();
     const created = { id: localId, ...newDoubt };
     try {
-      const existing = JSON.parse(localStorage.getItem('cc-preview-doubts')) || DEFAULT_INITIAL_DOUBTS;
+      const existing = JSON.parse(localStorage.getItem('cc-preview-doubts')) || [];
       localStorage.setItem('cc-preview-doubts', JSON.stringify([created, ...existing]));
     } catch (e) {
       console.error('Local doubt save error', e);
@@ -519,5 +446,98 @@ export const FirestoreService = {
       console.error('Error saving local plan', e);
     }
     return planDoc;
+  },
+
+  // CHAT SESSIONS & PERSISTENCE
+  subscribeChatHistory(userId, callback) {
+    const docId = userId ? `chat_${userId}` : 'chat_default';
+    if (!isFirebaseConfigured || !db) {
+      const localKey = `cc-${docId}-messages`;
+      try {
+        const saved = JSON.parse(localStorage.getItem(localKey)) || [];
+        callback(saved);
+      } catch {
+        callback([]);
+      }
+      return () => {};
+    }
+
+    try {
+      const chatDocRef = doc(db, CHAT_COLLECTION, docId);
+      const unsubscribe = onSnapshot(
+        chatDocRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            callback(data.messages || []);
+          } else {
+            callback([]);
+          }
+        },
+        (err) => {
+          console.warn('Chat session snapshot error:', err);
+          const localKey = `cc-${docId}-messages`;
+          try {
+            const saved = JSON.parse(localStorage.getItem(localKey)) || [];
+            callback(saved);
+          } catch {
+            callback([]);
+          }
+        }
+      );
+      return unsubscribe;
+    } catch (e) {
+      console.error('Failed to subscribe to chat history:', e);
+      return () => {};
+    }
+  },
+
+  async saveChatHistory(userId, messages, model = 'gemini-3.5-flash', title = 'Workload Strategy Session') {
+    const docId = userId ? `chat_${userId}` : 'chat_default';
+    const payload = {
+      id: docId,
+      userId: userId || 'public',
+      title,
+      messages,
+      model,
+      updatedAt: Date.now()
+    };
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, CHAT_COLLECTION, docId), payload, { merge: true });
+        return;
+      } catch (err) {
+        console.warn('Error saving chat history to Firestore:', err);
+      }
+    }
+
+    // Local fallback
+    try {
+      localStorage.setItem(`cc-${docId}-messages`, JSON.stringify(messages));
+    } catch (e) {
+      console.error('Error saving local chat messages:', e);
+    }
+  },
+
+  async clearChatHistory(userId) {
+    const docId = userId ? `chat_${userId}` : 'chat_default';
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, CHAT_COLLECTION, docId), {
+          id: docId,
+          userId: userId || 'public',
+          messages: [],
+          updatedAt: Date.now()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Error clearing chat history in Firestore:', err);
+      }
+    }
+    try {
+      localStorage.removeItem(`cc-${docId}-messages`);
+    } catch (e) {
+      // ignore
+    }
   }
 };

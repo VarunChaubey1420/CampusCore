@@ -4,7 +4,9 @@ import {
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   onAuthStateChanged,
-  updateProfile as fbUpdateProfile
+  updateProfile as fbUpdateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from './lib/firebase';
@@ -32,6 +34,7 @@ const AuthContext = createContext({
   loginWithStaticCredentials: async () => {},
   signUp: async () => {},
   signIn: async () => {},
+  signInWithGoogle: async () => {},
   signOut: async () => {},
   updateProfile: async () => {}
 });
@@ -220,6 +223,43 @@ export function AuthProvider({ children }) {
     throw new Error('Account not found. Please register or verify your email.');
   };
 
+  const signInWithGoogle = async () => {
+    if (isFirebaseConfigured && auth) {
+      try {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const res = await signInWithPopup(auth, provider);
+        if (res.user) {
+          if (db) {
+            try {
+              const userRef = doc(db, 'users', res.user.uid);
+              const userSnap = await getDoc(userRef);
+              if (!userSnap.exists()) {
+                await setDoc(userRef, {
+                  id: res.user.uid,
+                  email: res.user.email,
+                  fullName: res.user.displayName || res.user.email?.split('@')[0] || 'Student',
+                  branch: 'Computer Science & Engineering',
+                  year: 'Semester 6',
+                  createdAt: Date.now()
+                });
+              }
+            } catch (e) {
+              console.warn('Error saving Google user profile to Firestore:', e);
+            }
+          }
+          setIsGuest(false);
+          return res.user;
+        }
+      } catch (err) {
+        console.warn('Google sign-in error:', err);
+        throw err;
+      }
+    }
+    // Fallback
+    return await loginWithStaticCredentials('varunchaubey757@gmail.com', 'password123');
+  };
+
   const signOut = async () => {
     try {
       localStorage.removeItem('campuscore_static_user');
@@ -249,6 +289,7 @@ export function AuthProvider({ children }) {
         loginWithStaticCredentials,
         signUp,
         signIn,
+        signInWithGoogle,
         signOut
       }}
     >
@@ -277,9 +318,9 @@ export function FirebaseStatusBadge() {
 export function AuthScreen() {
   const { signIn, signUp, loginWithStaticCredentials } = useAuthSession();
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState('varunchaubey757@gmail.com');
-  const [password, setPassword] = useState('password123');
-  const [fullName, setFullName] = useState('Varun Chaubey');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 

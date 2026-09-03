@@ -28,13 +28,17 @@ import {
   RotateCcw,
   LogOut,
   Cloud,
-  CheckCheck
+  CheckCheck,
+  Bot,
+  AlertCircle,
+  AlertTriangle
 } from 'lucide-react';
 import './styles.css';
 import { AuthProvider, AuthScreen, FirebaseStatusBadge, useAuthSession } from './auth';
 import { LoginPage } from './LoginPage';
 import { LoadingScreen } from './LoadingScreen';
 import { FirestoreService } from './lib/firestoreService';
+import { WorkloadChatbot } from './WorkloadChatbot';
 
 const today = new Date();
 const datePlus = (days) => {
@@ -45,6 +49,7 @@ const datePlus = (days) => {
 
 const nav = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { id: 'advisor', label: 'AI Workload Chat', icon: Bot, isAi: true },
   { id: 'doubts', label: 'Doubt Space', icon: MessageCircleQuestion },
   { id: 'planner', label: 'Study Planner', icon: CalendarDays },
   { id: 'tasks', label: 'Task Manager', icon: CheckSquare }
@@ -111,6 +116,49 @@ function Workspace({ user, authConfigured, signOut }) {
   const [activeDoubt, setActiveDoubt] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Topbar interactive states
+  const [showSearch, setShowSearch] = useState(false);
+  const [showNotif, setShowNotif] = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showQuickTask, setShowQuickTask] = useState(false);
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('campuscore_read_notifs');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const notifRef = useRef(null);
+  const quickAddRef = useRef(null);
+
+  // Outside click listener to dismiss popovers
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setShowNotif(false);
+      }
+      if (quickAddRef.current && !quickAddRef.current.contains(e.target)) {
+        setShowQuickAdd(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Global keyboard shortcut: Cmd+K / Ctrl+K opens search palette
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowSearch(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -139,12 +187,139 @@ function Workspace({ user, authConfigured, signOut }) {
     };
   }, [user?.id]);
 
+  // Generate dynamic academic notifications
+  const notifications = useMemo(() => {
+    const list = [];
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    // 1. Overdue & Due Today tasks
+    tasks.filter(t => t.status !== 'Completed').forEach(t => {
+      if (t.due) {
+        if (t.due < todayStr) {
+          list.push({
+            id: `overdue-${t.id}`,
+            type: 'overdue',
+            title: `Overdue: ${t.title}`,
+            desc: `Was due on ${t.due} · Priority: ${t.priority || 'Normal'}`,
+            target: 'tasks',
+            taskId: t.id,
+            time: 'Overdue'
+          });
+        } else if (t.due === todayStr) {
+          list.push({
+            id: `today-${t.id}`,
+            type: 'today',
+            title: `Due Today: ${t.title}`,
+            desc: `${t.category || 'Assignment'} deadline today`,
+            target: 'tasks',
+            taskId: t.id,
+            time: 'Today'
+          });
+        }
+      }
+    });
+
+    // 2. High priority upcoming tasks
+    const highTasks = tasks.filter(t => t.status !== 'Completed' && t.priority === 'High' && (!t.due || t.due > todayStr));
+    highTasks.slice(0, 2).forEach(t => {
+      list.push({
+        id: `high-${t.id}`,
+        type: 'high',
+        title: `High Priority: ${t.title}`,
+        desc: `Target deadline: ${t.due || 'No date set'}`,
+        target: 'tasks',
+        taskId: t.id,
+        time: 'High priority'
+      });
+    });
+
+    // 3. Doubts forum updates
+    if (doubts.length > 0) {
+      const topDoubt = doubts[0];
+      list.push({
+        id: `doubt-${topDoubt.id}`,
+        type: 'doubt',
+        title: `Peer Doubt: ${topDoubt.title}`,
+        desc: `${topDoubt.subject} · ${topDoubt.answers?.length || 0} peer answers`,
+        target: 'doubts',
+        doubt: topDoubt,
+        time: 'Community'
+      });
+    }
+
+    // 4. Study planner roadmap
+    const upcomingSessions = plans.flatMap(p => p.sessions || []).filter(s => s.date >= todayStr);
+    if (upcomingSessions.length > 0) {
+      list.push({
+        id: `session-${upcomingSessions[0].date}-${upcomingSessions[0].topic}`,
+        type: 'session',
+        title: `Study Session: ${upcomingSessions[0].topic}`,
+        desc: `${upcomingSessions[0].date} · Focus: ${upcomingSessions[0].duration || '1h'}`,
+        target: 'planner',
+        time: 'Upcoming'
+      });
+    }
+
+    // 5. System Firebase status
+    list.push({
+      id: 'sys-firebase-active',
+      type: 'system',
+      title: 'Cloud Firestore Synchronized',
+      desc: 'All academic deliverables & peer discussions synchronized in real time.',
+      target: 'dashboard',
+      time: 'Live'
+    });
+
+    return list;
+  }, [tasks, doubts, plans]);
+
+  const unreadCount = notifications.filter(n => !readNotifIds.has(n.id)).length;
+
+  const markAllNotifsRead = () => {
+    const updated = new Set([...readNotifIds, ...notifications.map(n => n.id)]);
+    setReadNotifIds(updated);
+    try {
+      localStorage.setItem('campuscore_read_notifs', JSON.stringify([...updated]));
+    } catch (e) {}
+  };
+
+  const handleSelectNotif = (notif) => {
+    const updated = new Set([...readNotifIds, notif.id]);
+    setReadNotifIds(updated);
+    try {
+      localStorage.setItem('campuscore_read_notifs', JSON.stringify([...updated]));
+    } catch (e) {}
+
+    setShowNotif(false);
+    if (notif.target === 'tasks') {
+      setPage('tasks');
+    } else if (notif.target === 'doubts') {
+      setPage('doubts');
+      if (notif.doubt) setActiveDoubt(notif.doubt);
+    } else if (notif.target === 'planner') {
+      setPage('planner');
+    } else if (notif.target === 'dashboard') {
+      setPage('dashboard');
+    }
+  };
+
   const pending = tasks.filter(t => t.status !== 'Completed');
   const displayName = user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Varun Chaubey';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'VC';
 
   const renderPage = () => ({
     dashboard: <Dashboard user={user} doubts={doubts} tasks={tasks} plans={plans} navigate={setPage} />,
+    advisor: (
+      <WorkloadChatbot
+        user={user}
+        tasks={tasks}
+        plans={plans}
+        onTaskAdded={() => showToast('Task saved to Firebase!')}
+        onPlanAdded={() => showToast('Roadmap saved to Firebase!')}
+        showToast={showToast}
+      />
+    ),
     doubts: (
       <DoubtSpace
         user={user}
@@ -194,6 +369,7 @@ function Workspace({ user, authConfigured, signOut }) {
               >
                 <Icon size={19} />
                 {n.label}
+                {n.id === 'advisor' && <span className="nav-ai-pill"><Sparkles size={11} /> AI</span>}
                 {n.id === 'tasks' && pending.length > 0 && <b>{pending.length}</b>}
               </button>
             );
@@ -236,19 +412,74 @@ function Workspace({ user, authConfigured, signOut }) {
           </div>
           <div className="top-actions">
             <FirebaseStatusBadge />
-            <button className="icon-btn" title="Search"><Search size={19} /></button>
-            <button className="icon-btn notification" title="Notifications"><Bell size={19} /><i /></button>
             <button
-              className="new-btn"
-              onClick={() => {
-                if (page === 'doubts') setShowDoubt(true);
-                else if (page === 'tasks') window.dispatchEvent(new Event('new-task'));
-                else setPage('tasks');
-              }}
+              className="icon-btn"
+              title="Search (⌘K)"
+              aria-label="Search"
+              onClick={() => setShowSearch(true)}
             >
-              <Plus size={18} />
-              {page === 'doubts' ? 'Post doubt' : page === 'tasks' ? 'New task' : 'Quick add'}
+              <Search size={19} />
             </button>
+
+            <div className="top-action-anchor" ref={notifRef}>
+              <button
+                className={`icon-btn notification ${unreadCount > 0 ? 'has-unread' : ''}`}
+                title="Notifications"
+                aria-label={`Notifications (${unreadCount} unread)`}
+                onClick={() => setShowNotif(prev => !prev)}
+              >
+                <Bell size={19} />
+                {unreadCount > 0 && <i />}
+              </button>
+              {showNotif && (
+                <NotificationsPopover
+                  notifications={notifications}
+                  readNotifIds={readNotifIds}
+                  onMarkAllRead={markAllNotifsRead}
+                  onSelectNotification={handleSelectNotif}
+                  onClose={() => setShowNotif(false)}
+                />
+              )}
+            </div>
+
+            <div className="top-action-anchor" ref={quickAddRef}>
+              <button
+                className="new-btn"
+                title="Quick add"
+                aria-label="Quick add"
+                onClick={() => setShowQuickAdd(prev => !prev)}
+              >
+                <Plus size={18} />
+                <span>{page === 'doubts' ? 'Post doubt' : page === 'tasks' ? 'New task' : 'Quick add'}</span>
+                <ChevronDown size={14} style={{ marginLeft: 2, opacity: 0.85 }} />
+              </button>
+              {showQuickAdd && (
+                <QuickAddMenu
+                  onAddTask={() => {
+                    setShowQuickAdd(false);
+                    if (page === 'tasks') {
+                      window.dispatchEvent(new Event('new-task'));
+                    } else {
+                      setShowQuickTask(true);
+                    }
+                  }}
+                  onAskDoubt={() => {
+                    setShowQuickAdd(false);
+                    setPage('doubts');
+                    setShowDoubt(true);
+                  }}
+                  onStudyPlan={() => {
+                    setShowQuickAdd(false);
+                    setPage('planner');
+                  }}
+                  onAskAdvisor={() => {
+                    setShowQuickAdd(false);
+                    setPage('advisor');
+                  }}
+                  onClose={() => setShowQuickAdd(false)}
+                />
+              )}
+            </div>
           </div>
         </header>
         <section className="content">{renderPage()}</section>
@@ -258,6 +489,42 @@ function Workspace({ user, authConfigured, signOut }) {
             <span>{toastMessage}</span>
           </div>
         )}
+
+        {showSearch && (
+          <SearchCommandPalette
+            isOpen={showSearch}
+            onClose={() => setShowSearch(false)}
+            tasks={tasks}
+            doubts={doubts}
+            plans={plans}
+            onNavigate={(p) => {
+              setPage(p);
+              setShowSearch(false);
+            }}
+            onSelectDoubt={(d) => {
+              setPage('doubts');
+              setActiveDoubt(d);
+              setShowSearch(false);
+            }}
+            onQuickTask={() => {
+              setShowSearch(false);
+              setShowQuickTask(true);
+            }}
+            onAskDoubt={() => {
+              setShowSearch(false);
+              setPage('doubts');
+              setShowDoubt(true);
+            }}
+          />
+        )}
+
+        {showQuickTask && (
+          <QuickTaskModal
+            user={user}
+            onClose={() => setShowQuickTask(false)}
+            onSaved={() => showToast('Task saved to Firebase!')}
+          />
+        )}
       </main>
     </div>
   );
@@ -266,15 +533,20 @@ function Workspace({ user, authConfigured, signOut }) {
 function Dashboard({ user, doubts, tasks, plans, navigate }) {
   const upcoming = plans.flatMap(p => p.sessions || []).slice(0, 3);
   const userMeta = user?.user_metadata || {};
-  const studentName = userMeta.display_name || userMeta.full_name || user?.email?.split('@')[0] || 'Varun';
-  const dept = userMeta.branch || 'Computer Science & Engineering';
-  const sem = userMeta.year || 'Semester 6';
+  const studentName = userMeta.display_name || userMeta.full_name || user?.email?.split('@')[0] || 'Student';
+  const dept = userMeta.branch || 'Campus Student';
+  const sem = userMeta.year || '';
+
+  // Calculate dynamic reputation based on real user activity
+  const userDoubts = doubts.filter(d => d.author === studentName || d.userId === user?.id);
+  const totalAnswers = doubts.reduce((acc, d) => acc + (d.answers?.filter(a => a.author === studentName || a.userId === user?.id)?.length || 0), 0);
+  const dynamicRep = (userDoubts.length * 5) + (totalAnswers * 10);
 
   return (
     <>
       <div className="page-heading">
         <div>
-          <p className="eyebrow">{dept.toUpperCase()} · {sem.toUpperCase()}</p>
+          {dept && <p className="eyebrow">{dept.toUpperCase()}{sem ? ` · ${sem.toUpperCase()}` : ''}</p>}
           <h1>Good day, {studentName} <span>✦</span></h1>
           <p>Your academic tasks and peer doubts are securely synchronized in Firebase.</p>
         </div>
@@ -284,67 +556,117 @@ function Dashboard({ user, doubts, tasks, plans, navigate }) {
       </div>
       <div className="stat-grid">
         <Stat icon={<CircleHelp />} tint="blue" value={doubts.length} label="Active doubts" note="in campus forum" />
-        <Stat icon={<Calendar />} tint="purple" value={upcoming.length || 3} label="Study sessions" note="scheduled in cloud" />
+        <Stat icon={<Calendar />} tint="purple" value={upcoming.length} label="Study sessions" note="scheduled in cloud" />
         <Stat icon={<CheckSquare />} tint="orange" value={tasks.filter(t => t.status !== 'Completed').length} label="Pending tasks" note="saved in Firebase" />
-        <Stat icon={<BarChart3 />} tint="green" value="248" label="Reputation" note="+18 this week" />
+        <Stat icon={<BarChart3 />} tint="green" value={dynamicRep} label="Reputation" note={`${userDoubts.length + totalAnswers} contributions`} />
       </div>
+
+      {/* AI Workload Assistant Banner */}
+      <div className="panel ai-advisor-banner" onClick={() => navigate('advisor')} role="button" tabIndex={0}>
+        <div className="ai-advisor-banner-left">
+          <div className="ai-banner-icon-badge">
+            <Bot size={22} />
+          </div>
+          <div>
+            <div className="ai-banner-badge-row">
+              <span className="ai-chip-pill"><Sparkles size={12} /> Gemini Powered</span>
+              <span className="ai-chip-sub">Workload Strategist</span>
+            </div>
+            <h3>Struggling with heavy deadlines?</h3>
+            <p>
+              Ask your AI Advisor to prioritize your {tasks.filter(t => t.status !== 'Completed').length} pending tasks, create 45-min focus sprints, and schedule your week.
+            </p>
+          </div>
+        </div>
+        <button className="ai-banner-cta-btn" onClick={(e) => { e.stopPropagation(); navigate('advisor'); }}>
+          <span>Open AI Planner</span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
       <div className="dashboard-grid">
         <div className="panel activity">
           <PanelHead title="Recent doubts in forum" action="View all" onClick={() => navigate('doubts')} />
-          {doubts.slice(0, 3).map(d => (
-            <div className="doubt-row" key={d.id}>
-              <Avatar initials={d.initials || 'VC'} />
-              <div className="doubt-main">
-                <div>
-                  <Pill>{d.subject}</Pill>
-                  <Pill tone="muted">{d.semester}</Pill>
-                  {d.resolved && <Pill tone="success">Solved</Pill>}
-                </div>
-                <strong>{d.title}</strong>
-                <small>by {d.author} · {d.time || 'recently'}</small>
-              </div>
-              <div className="answer-count">
-                <MessageCircleQuestion size={16} />
-                <b>{d.answers?.length || 0}</b>
-              </div>
+          {doubts.length === 0 ? (
+            <div className="empty-panel-state">
+              <MessageCircleQuestion size={24} />
+              <p>No questions posted yet</p>
+              <button className="create-task-inline-btn" onClick={() => navigate('doubts')}>
+                <Plus size={13} /> Ask a doubt
+              </button>
             </div>
-          ))}
+          ) : (
+            doubts.slice(0, 3).map(d => (
+              <div className="doubt-row" key={d.id}>
+                <Avatar initials={d.initials || 'ST'} />
+                <div className="doubt-main">
+                  <div>
+                    <Pill>{d.subject}</Pill>
+                    <Pill tone="muted">{d.semester}</Pill>
+                    {d.resolved && <Pill tone="success">Solved</Pill>}
+                  </div>
+                  <strong>{d.title}</strong>
+                  <small>by {d.author} · {d.time || 'recently'}</small>
+                </div>
+                <div className="answer-count">
+                  <MessageCircleQuestion size={16} />
+                  <b>{d.answers?.length || 0}</b>
+                </div>
+              </div>
+            ))
+          )}
         </div>
         <div className="panel agenda">
           <PanelHead title="Coming up" action="View planner" onClick={() => navigate('planner')} />
-          {(upcoming.length ? upcoming : [
-            { topic: 'Database Normalisation & SQL', date: 'Today', subject: 'DBMS' },
-            { topic: 'Neural Networks Backprop', date: 'Tomorrow', subject: 'ML' },
-            { topic: 'Operating Systems Semaphores', date: 'Sat, 29 Aug', subject: 'OS' }
-          ]).map((s, i) => (
-            <div className="agenda-row" key={i}>
-              <span className="date-box">
-                <b>{i === 0 ? '27' : i === 1 ? '28' : '29'}</b>
-                <small>AUG</small>
-              </span>
-              <div>
-                <strong>{s.topic}</strong>
-                <small>{s.subject} · {s.date}</small>
-              </div>
-              <Clock3 size={16} />
+          {upcoming.length === 0 ? (
+            <div className="empty-panel-state">
+              <Calendar size={24} />
+              <p>No study sessions scheduled yet</p>
+              <button className="create-task-inline-btn" onClick={() => navigate('planner')}>
+                <Sparkles size={13} /> Build plan
+              </button>
             </div>
-          ))}
+          ) : (
+            upcoming.map((s, i) => (
+              <div className="agenda-row" key={i}>
+                <span className="date-box">
+                  <b>{new Date(s.date + 'T12:00').getDate() || (i + 1)}</b>
+                  <small>{new Date(s.date + 'T12:00').toLocaleDateString('en-US', { month: 'short' }).toUpperCase() || 'SES'}</small>
+                </span>
+                <div>
+                  <strong>{s.topic}</strong>
+                  <small>{s.subject} · {s.date}</small>
+                </div>
+                <Clock3 size={16} />
+              </div>
+            ))
+          )}
         </div>
       </div>
       <div className="panel pending-panel">
         <PanelHead title="Tasks to keep moving" action="Open tasks" onClick={() => navigate('tasks')} />
-        <div className="task-mini-grid">
-          {tasks.filter(t => t.status !== 'Completed').slice(0, 3).map(t => (
-            <div className="task-mini" key={t.id}>
-              <span className="check-dot" />
-              <div>
-                <strong>{t.title}</strong>
-                <small>Due {formatDate(t.due)}</small>
+        {tasks.filter(t => t.status !== 'Completed').length === 0 ? (
+          <div className="empty-panel-state">
+            <CheckSquare size={24} />
+            <p>No pending tasks right now</p>
+            <button className="create-task-inline-btn" onClick={() => navigate('tasks')}>
+              <Plus size={13} /> Add task
+            </button>
+          </div>
+        ) : (
+          <div className="task-mini-grid">
+            {tasks.filter(t => t.status !== 'Completed').slice(0, 3).map(t => (
+              <div className="task-mini" key={t.id}>
+                <span className="check-dot" />
+                <div>
+                  <strong>{t.title}</strong>
+                  <small>Due {formatDate(t.due)}</small>
+                </div>
+                <Pill tone="muted">{t.status}</Pill>
               </div>
-              <Pill tone="muted">{t.status}</Pill>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
@@ -634,24 +956,36 @@ function DoubtDetail({ user, doubt, onClose }) {
 }
 
 function Planner({ user, setPlans, setTasks, plans, onPlanSaved }) {
-  const [exam, setExam] = useState(datePlus(14));
+  const [exam, setExam] = useState('');
   const [subjects, setSubjects] = useState([
-    { name: 'Database Systems', weak: 'Normalisation & SQL joins' },
-    { name: 'Machine Learning', weak: 'Neural networks & Backpropagation' },
-    { name: 'Operating Systems', weak: 'Deadlocks & Semaphores' }
+    { name: '', weak: '' }
   ]);
   const [generated, setGenerated] = useState(plans[0] || null);
+  const [plannerError, setPlannerError] = useState('');
 
   const create = async () => {
-    const days = Math.max(3, Math.ceil((new Date(exam) - today) / 86400000));
+    setPlannerError('');
+    if (!exam) {
+      setPlannerError('Please select your exam date.');
+      return;
+    }
+    const validSubjects = subjects.filter(s => s.name && s.name.trim());
+    if (validSubjects.length === 0) {
+      setPlannerError('Please enter at least one subject name.');
+      return;
+    }
+
+    const examDate = new Date(exam);
+    const todayDate = new Date();
+    const days = Math.max(3, Math.ceil((examDate - todayDate) / 86400000));
     const sessions = Array.from({ length: Math.min(days, 12) }, (_, i) => {
-      const s = subjects[i % subjects.length];
-      const isWeak = i < subjects.length * 2;
+      const s = validSubjects[i % validSubjects.length];
+      const isWeak = i < validSubjects.length * 2 && s.weak && s.weak.trim();
       return {
         id: 'sess_' + Date.now() + '_' + i,
         date: datePlus(i + 1),
-        topic: isWeak ? s.weak : `${s.name} revision`,
-        subject: s.name,
+        topic: isWeak ? s.weak.trim() : `${s.name.trim()} revision`,
+        subject: s.name.trim(),
         focus: isWeak ? 'Deep focus' : 'Revision'
       };
     });
@@ -696,7 +1030,14 @@ function Planner({ user, setPlans, setTasks, plans, onPlanSaved }) {
           <p className="subcopy">Tell us your exam date and where you need the most support.</p>
           <label>
             When is your exam?
-            <input type="date" value={exam} onChange={e => setExam(e.target.value)} />
+            <input
+              type="date"
+              value={exam}
+              onChange={e => {
+                setPlannerError('');
+                setExam(e.target.value);
+              }}
+            />
           </label>
           <div className="subject-form-head">
             <label>Your subjects</label>
@@ -708,20 +1049,33 @@ function Planner({ user, setPlans, setTasks, plans, onPlanSaved }) {
             <div className="subject-entry" key={i}>
               <span>{i + 1}</span>
               <input
-                placeholder="Subject name"
+                placeholder="Subject name (e.g. Database Systems)"
                 value={s.name}
-                onChange={e => setSubjects(subjects.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                onChange={e => {
+                  setPlannerError('');
+                  setSubjects(subjects.map((x, j) => j === i ? { ...x, name: e.target.value } : x));
+                }}
               />
               <input
-                placeholder="Weak topic / area"
+                placeholder="Weak topic / area (e.g. Normalisation)"
                 value={s.weak}
-                onChange={e => setSubjects(subjects.map((x, j) => j === i ? { ...x, weak: e.target.value } : x))}
+                onChange={e => {
+                  setPlannerError('');
+                  setSubjects(subjects.map((x, j) => j === i ? { ...x, weak: e.target.value } : x));
+                }}
               />
               {subjects.length > 1 && (
-                <button onClick={() => setSubjects(subjects.filter((_, j) => j !== i))}><X size={15} /></button>
+                <button onClick={() => setSubjects(subjects.filter((_, j) => j !== i))} title="Remove subject">
+                  <X size={15} />
+                </button>
               )}
             </div>
           ))}
+          {plannerError && (
+            <div className="planner-validation-error">
+              {plannerError}
+            </div>
+          )}
           <button className="primary-btn full" onClick={create}>
             <Sparkles size={16} /> Generate & Save Plan
           </button>
@@ -771,6 +1125,7 @@ function Planner({ user, setPlans, setTasks, plans, onPlanSaved }) {
 
 function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
   const [sortBy, setSortBy] = useState('due');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
   const [draft, setDraft] = useState(null);
   const [form, setForm] = useState({
@@ -791,11 +1146,21 @@ function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
 
   const completed = tasks.filter(t => t.status === 'Completed').length;
   const pending = tasks.length - completed;
+
+  const query = searchQuery.trim().toLowerCase();
   const sortedTasks = [...tasks].sort((a, b) =>
     sortBy === 'priority' ? priorityRank(b.priority) - priorityRank(a.priority) : dateValue(a.due) - dateValue(b.due)
   );
-  const incompleteTasks = sortedTasks.filter(t => t.status !== 'Completed');
-  const completedTasks = sortedTasks.filter(t => t.status === 'Completed');
+
+  const filteredTasks = sortedTasks.filter(t => {
+    if (!query) return true;
+    const title = (t.title || '').toLowerCase();
+    const desc = (t.description || '').toLowerCase();
+    return title.includes(query) || desc.includes(query);
+  });
+
+  const incompleteTasks = filteredTasks.filter(t => t.status !== 'Completed');
+  const completedTasks = filteredTasks.filter(t => t.status === 'Completed');
 
   const addTask = async (e) => {
     e.preventDefault();
@@ -933,8 +1298,35 @@ function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
 
         <section className="task-board">
           <div className="task-board-toolbar">
-            <span>{pending} pending · {completed} completed</span>
-            <div>
+            <span className="task-board-counts">
+              {query ? (
+                `${filteredTasks.length} of ${tasks.length} tasks`
+              ) : (
+                `${pending} pending · ${completed} completed`
+              )}
+            </span>
+            <div className="task-board-search">
+              <Search size={14} className="task-board-search-icon" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search tasks by title or description…"
+                aria-label="Search tasks by title or description"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="task-board-search-clear"
+                  onClick={() => setSearchQuery('')}
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <div className="task-board-sort">
               <button className={sortBy === 'due' ? 'selected' : ''} onClick={() => setSortBy('due')}>
                 Sort by due date
               </button>
@@ -946,32 +1338,44 @@ function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
 
           {tasks.length ? (
             <>
-              {incompleteTasks.length ? (
-                <div className="task-card-list">{renderTasks(incompleteTasks)}</div>
+              {query && filteredTasks.length === 0 ? (
+                <div className="task-no-search-results">
+                  <Search size={26} />
+                  <p>No tasks matching <strong>"{searchQuery}"</strong></p>
+                  <button type="button" onClick={() => setSearchQuery('')}>Clear search</button>
+                </div>
               ) : (
-                <div className="task-no-pending">No incomplete tasks — you’re all caught up! 🎉</div>
-              )}
-              {completedTasks.length > 0 && (
-                <section className="completed-task-group">
-                  <div className="completed-task-group-head">
-                    <button
-                      className="completed-group-trigger"
-                      aria-expanded={showCompleted}
-                      onClick={() => setShowCompleted(open => !open)}
-                    >
-                      <ChevronDown size={17} className={showCompleted ? 'open' : ''} />
-                      Completed tasks <span>{completed}</span>
-                    </button>
-                    <button className="clear-completed" onClick={clearCompleted}>
-                      <Trash2 size={14} /> Clear completed
-                    </button>
-                  </div>
-                  {showCompleted && (
-                    <div className="task-card-list completed-task-list">
-                      {renderTasks(completedTasks)}
+                <>
+                  {incompleteTasks.length ? (
+                    <div className="task-card-list">{renderTasks(incompleteTasks)}</div>
+                  ) : (
+                    <div className="task-no-pending">
+                      {query ? 'No incomplete tasks match your search.' : 'No incomplete tasks — you’re all caught up! 🎉'}
                     </div>
                   )}
-                </section>
+                  {completedTasks.length > 0 && (
+                    <section className="completed-task-group">
+                      <div className="completed-task-group-head">
+                        <button
+                          className="completed-group-trigger"
+                          aria-expanded={showCompleted}
+                          onClick={() => setShowCompleted(open => !open)}
+                        >
+                          <ChevronDown size={17} className={showCompleted ? 'open' : ''} />
+                          Completed tasks <span>{completedTasks.length}</span>
+                        </button>
+                        <button className="clear-completed" onClick={clearCompleted}>
+                          <Trash2 size={14} /> Clear completed
+                        </button>
+                      </div>
+                      {showCompleted && (
+                        <div className="task-card-list completed-task-list">
+                          {renderTasks(completedTasks)}
+                        </div>
+                      )}
+                    </section>
+                  )}
+                </>
               )}
             </>
           ) : (
@@ -1097,6 +1501,496 @@ function taskDueLabel(d, completed) {
   if (days === 0) return 'Due today';
   if (days === 1) return 'Due tomorrow';
   return `Due ${formatDate(d)}`;
+}
+
+function NotificationsPopover({ notifications, readNotifIds, onMarkAllRead, onSelectNotification, onClose }) {
+  const unreadCount = notifications.filter(n => !readNotifIds.has(n.id)).length;
+
+  return (
+    <div className="notif-popover" role="dialog" aria-label="Academic notifications">
+      <div className="notif-header">
+        <div className="notif-header-title">
+          <h3>Notifications</h3>
+          {unreadCount > 0 && <span className="notif-count-pill">{unreadCount} new</span>}
+        </div>
+        {unreadCount > 0 && (
+          <button className="notif-mark-read" onClick={onMarkAllRead}>
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      <div className="notif-list">
+        {notifications.length === 0 ? (
+          <div className="notif-empty">
+            <CheckCheck size={28} />
+            <strong>All caught up!</strong>
+            <p>No notifications right now. Your tasks and schedule are current.</p>
+          </div>
+        ) : (
+          notifications.map(item => {
+            const isUnread = !readNotifIds.has(item.id);
+            return (
+              <div
+                key={item.id}
+                className={`notif-item ${isUnread ? 'unread' : ''}`}
+                onClick={() => onSelectNotification(item)}
+              >
+                <div className={`notif-icon-wrap ${item.type}`}>
+                  {item.type === 'overdue' && <AlertTriangle size={16} />}
+                  {item.type === 'today' && <Clock3 size={16} />}
+                  {item.type === 'high' && <AlertCircle size={16} />}
+                  {item.type === 'doubt' && <MessageCircleQuestion size={16} />}
+                  {item.type === 'session' && <Calendar size={16} />}
+                  {item.type === 'system' && <Cloud size={16} />}
+                </div>
+                <div className="notif-content">
+                  <div className="notif-content-top">
+                    <h4 className="notif-title">{item.title}</h4>
+                    <span className="notif-time">{item.time}</span>
+                  </div>
+                  <p className="notif-desc">{item.desc}</p>
+                </div>
+                {isUnread && <span className="notif-unread-dot" />}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QuickAddMenu({ onAddTask, onAskDoubt, onStudyPlan, onAskAdvisor, onClose }) {
+  return (
+    <div className="quick-add-menu" role="menu">
+      <button className="quick-add-item" role="menuitem" onClick={onAddTask}>
+        <div className="quick-add-icon task">
+          <CheckSquare size={16} />
+        </div>
+        <div className="quick-add-text">
+          <span className="quick-add-label">New Task</span>
+          <span className="quick-add-sub">Assignment, exam or reading</span>
+        </div>
+      </button>
+
+      <button className="quick-add-item" role="menuitem" onClick={onAskDoubt}>
+        <div className="quick-add-icon doubt">
+          <MessageCircleQuestion size={16} />
+        </div>
+        <div className="quick-add-text">
+          <span className="quick-add-label">Post a Doubt</span>
+          <span className="quick-add-sub">Ask campus community</span>
+        </div>
+      </button>
+
+      <button className="quick-add-item" role="menuitem" onClick={onStudyPlan}>
+        <div className="quick-add-icon plan">
+          <Calendar size={16} />
+        </div>
+        <div className="quick-add-text">
+          <span className="quick-add-label">Study Plan</span>
+          <span className="quick-add-sub">Build revision roadmap</span>
+        </div>
+      </button>
+
+      <button className="quick-add-item" role="menuitem" onClick={onAskAdvisor}>
+        <div className="quick-add-icon advisor">
+          <Bot size={16} />
+        </div>
+        <div className="quick-add-text">
+          <span className="quick-add-label">AI Advisor</span>
+          <span className="quick-add-sub">Plan workload strategy</span>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function SearchCommandPalette({
+  isOpen,
+  onClose,
+  tasks,
+  doubts,
+  plans,
+  onNavigate,
+  onSelectDoubt,
+  onQuickTask,
+  onAskDoubt
+}) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 60);
+    } else {
+      setQuery('');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const q = query.trim().toLowerCase();
+
+  // Filter tasks
+  const matchedTasks = tasks.filter(t => {
+    if (!q) return false;
+    return (
+      (t.title || '').toLowerCase().includes(q) ||
+      (t.description || '').toLowerCase().includes(q) ||
+      (t.category || '').toLowerCase().includes(q) ||
+      (t.priority || '').toLowerCase().includes(q)
+    );
+  }).slice(0, 5);
+
+  // Filter doubts
+  const matchedDoubts = doubts.filter(d => {
+    if (!q) return false;
+    return (
+      (d.title || '').toLowerCase().includes(q) ||
+      (d.description || '').toLowerCase().includes(q) ||
+      (d.subject || '').toLowerCase().includes(q)
+    );
+  }).slice(0, 4);
+
+  // Filter plans
+  const matchedSessions = plans.flatMap(p => (p.sessions || []).map(s => ({ ...s, planSubject: p.subject }))).filter(s => {
+    if (!q) return false;
+    return (
+      (s.topic || '').toLowerCase().includes(q) ||
+      (s.planSubject || '').toLowerCase().includes(q)
+    );
+  }).slice(0, 3);
+
+  // Navigation options
+  const navOptions = [
+    { id: 'dashboard', label: 'Dashboard', sub: 'Academic summary & upcoming deliverables', icon: LayoutDashboard },
+    { id: 'tasks', label: 'Tasks Board', sub: 'Manage assignments, practicals & exams', icon: CheckSquare },
+    { id: 'doubts', label: 'Doubts Forum', sub: 'Peer Q&A, answers & verified solutions', icon: MessageCircleQuestion },
+    { id: 'planner', label: 'Study Planner', sub: 'AI semester roadmap & study sessions', icon: CalendarDays },
+    { id: 'advisor', label: 'AI Workload Advisor', sub: 'Ask Gemini workload assistant', icon: Bot },
+  ].filter(n => !q || n.label.toLowerCase().includes(q) || n.sub.toLowerCase().includes(q));
+
+  const hasMatches = matchedTasks.length > 0 || matchedDoubts.length > 0 || matchedSessions.length > 0 || (q && navOptions.length > 0);
+
+  return (
+    <div className="search-palette-backdrop" onMouseDown={onClose}>
+      <div className="search-palette" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Quick search">
+        <div className="search-palette-input-wrap">
+          <Search size={18} />
+          <input
+            ref={inputRef}
+            className="search-palette-input"
+            placeholder="Search tasks, doubts, study plans, or jump to page..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          {query ? (
+            <button className="search-clear-btn" onClick={() => setQuery('')} title="Clear search" aria-label="Clear search">
+              <X size={16} />
+            </button>
+          ) : (
+            <span className="search-esc-badge">ESC</span>
+          )}
+        </div>
+
+        <div className="search-palette-body">
+          {!q ? (
+            <>
+              <div>
+                <p className="search-group-title">Quick Actions</p>
+                <div className="search-group-items">
+                  <button
+                    className="search-item"
+                    onClick={() => { onClose(); onQuickTask(); }}
+                  >
+                    <div className="search-item-left">
+                      <span className="search-item-icon"><Plus size={15} /></span>
+                      <div className="search-item-info">
+                        <strong className="search-item-title">Add a New Task</strong>
+                        <span className="search-item-sub">Record assignment, exam, or practical</span>
+                      </div>
+                    </div>
+                    <span className="search-badge action">Action</span>
+                  </button>
+
+                  <button
+                    className="search-item"
+                    onClick={() => { onClose(); onAskDoubt(); }}
+                  >
+                    <div className="search-item-left">
+                      <span className="search-item-icon"><MessageCircleQuestion size={15} /></span>
+                      <div className="search-item-info">
+                        <strong className="search-item-title">Post a Doubt</strong>
+                        <span className="search-item-sub">Ask the campus community for help</span>
+                      </div>
+                    </div>
+                    <span className="search-badge action">Action</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="search-group-title">Jump to Page</p>
+                <div className="search-group-items">
+                  {navOptions.map(nav => {
+                    const Icon = nav.icon;
+                    return (
+                      <button
+                        key={nav.id}
+                        className="search-item"
+                        onClick={() => { onClose(); onNavigate(nav.id); }}
+                      >
+                        <div className="search-item-left">
+                          <span className="search-item-icon"><Icon size={15} /></span>
+                          <div className="search-item-info">
+                            <strong className="search-item-title">{nav.label}</strong>
+                            <span className="search-item-sub">{nav.sub}</span>
+                          </div>
+                        </div>
+                        <span className="search-badge action">Jump</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {matchedTasks.length > 0 && (
+                <div>
+                  <p className="search-group-title">Tasks ({matchedTasks.length})</p>
+                  <div className="search-group-items">
+                    {matchedTasks.map(t => (
+                      <button
+                        key={t.id}
+                        className="search-item"
+                        onClick={() => { onClose(); onNavigate('tasks'); }}
+                      >
+                        <div className="search-item-left">
+                          <span className="search-item-icon"><CheckSquare size={15} /></span>
+                          <div className="search-item-info">
+                            <strong className="search-item-title">{t.title}</strong>
+                            <span className="search-item-sub">
+                              {t.category || 'Assignment'} · Due {t.due || 'No date'} · {t.priority} priority
+                            </span>
+                          </div>
+                        </div>
+                        <div className="search-item-right">
+                          <span className="search-badge task">{t.status || 'To do'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {matchedDoubts.length > 0 && (
+                <div>
+                  <p className="search-group-title">Doubts Forum ({matchedDoubts.length})</p>
+                  <div className="search-group-items">
+                    {matchedDoubts.map(d => (
+                      <button
+                        key={d.id}
+                        className="search-item"
+                        onClick={() => { onClose(); onSelectDoubt(d); }}
+                      >
+                        <div className="search-item-left">
+                          <span className="search-item-icon"><MessageCircleQuestion size={15} /></span>
+                          <div className="search-item-info">
+                            <strong className="search-item-title">{d.title}</strong>
+                            <span className="search-item-sub">{d.subject} · {d.answers?.length || 0} answers</span>
+                          </div>
+                        </div>
+                        <div className="search-item-right">
+                          <span className="search-badge doubt">{d.semester || 'Doubt'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {matchedSessions.length > 0 && (
+                <div>
+                  <p className="search-group-title">Study Sessions ({matchedSessions.length})</p>
+                  <div className="search-group-items">
+                    {matchedSessions.map((s, idx) => (
+                      <button
+                        key={idx}
+                        className="search-item"
+                        onClick={() => { onClose(); onNavigate('planner'); }}
+                      >
+                        <div className="search-item-left">
+                          <span className="search-item-icon"><Calendar size={15} /></span>
+                          <div className="search-item-info">
+                            <strong className="search-item-title">{s.topic}</strong>
+                            <span className="search-item-sub">{s.planSubject} · {s.date} ({s.duration})</span>
+                          </div>
+                        </div>
+                        <div className="search-item-right">
+                          <span className="search-badge plan">Study</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {navOptions.length > 0 && (
+                <div>
+                  <p className="search-group-title">Pages ({navOptions.length})</p>
+                  <div className="search-group-items">
+                    {navOptions.map(nav => {
+                      const Icon = nav.icon;
+                      return (
+                        <button
+                          key={nav.id}
+                          className="search-item"
+                          onClick={() => { onClose(); onNavigate(nav.id); }}
+                        >
+                          <div className="search-item-left">
+                            <span className="search-item-icon"><Icon size={15} /></span>
+                            <div className="search-item-info">
+                              <strong className="search-item-title">{nav.label}</strong>
+                              <span className="search-item-sub">{nav.sub}</span>
+                            </div>
+                          </div>
+                          <span className="search-badge action">Jump</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!hasMatches && (
+                <div className="notif-empty" style={{ padding: '30px 20px' }}>
+                  <Search size={26} />
+                  <strong>No results found</strong>
+                  <p>We couldn't find any tasks, doubts, or pages matching "{query}".</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="search-palette-footer">
+          <div className="search-footer-shortcuts">
+            <span><kbd>ESC</kbd> to close</span>
+            <span><kbd>Click</kbd> to jump</span>
+          </div>
+          <span>CampusCore Search</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickTaskModal({ user, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    due: '',
+    category: 'Assignment',
+    priority: 'Medium'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await FirestoreService.addTask(user?.id, form);
+      if (onSaved) onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal title="Add Task (Saved to Firebase)" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="form-grid">
+        <label>
+          Task title
+          <input
+            autoFocus
+            required
+            placeholder="e.g. Complete Operating Systems lab 4"
+            value={form.title}
+            onChange={e => setForm({ ...form, title: e.target.value })}
+          />
+        </label>
+        <label>
+          Description
+          <textarea
+            placeholder="Key deliverables, rubric requirements, or notes..."
+            value={form.description}
+            onChange={e => setForm({ ...form, description: e.target.value })}
+            rows={3}
+          />
+        </label>
+        <div className="two-col">
+          <label>
+            Due date
+            <input
+              type="date"
+              value={form.due}
+              onChange={e => setForm({ ...form, due: e.target.value })}
+            />
+          </label>
+          <label>
+            Category
+            <select
+              value={form.category}
+              onChange={e => setForm({ ...form, category: e.target.value })}
+            >
+              <option>Assignment</option>
+              <option>Practical</option>
+              <option>Exam</option>
+              <option>Study</option>
+              <option>Personal</option>
+            </select>
+          </label>
+        </div>
+        <div className="two-col">
+          <label>
+            Priority
+            <select
+              value={form.priority}
+              onChange={e => setForm({ ...form, priority: e.target.value })}
+            >
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </select>
+          </label>
+        </div>
+        <button
+          type="submit"
+          className="primary-btn full"
+          disabled={!form.title.trim() || submitting}
+        >
+          {submitting ? 'Saving to Firebase…' : 'Add task to workload'}
+        </button>
+      </form>
+    </Modal>
+  );
 }
 
 createRoot(document.getElementById('root')).render(<App />);

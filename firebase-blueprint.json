@@ -72,6 +72,18 @@
         "config": { "type": "object", "description": "Configuration parameters used for generation" },
         "createdAt": { "type": "number", "description": "Creation timestamp ms" }
       }
+    },
+    "chat_sessions": {
+      "description": "Conversations and workload management sessions with the Gemini AI chatbot",
+      "fields": {
+        "id": { "type": "string", "description": "Session document ID" },
+        "userId": { "type": "string", "description": "Owner student UID" },
+        "title": { "type": "string", "description": "Session topic or summary" },
+        "messages": { "type": "array", "description": "Multi-turn message history array" },
+        "model": { "type": "string", "description": "Gemini model identifier used" },
+        "updatedAt": { "type": "number", "description": "Last update timestamp ms" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
     }
   }
 }
