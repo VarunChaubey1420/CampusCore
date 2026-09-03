@@ -1,0 +1,77 @@
+{
+  "$schema": "https://firebase.google.com/docs/firestore/blueprint.schema.json",
+  "entities": {
+    "users": {
+      "description": "Registered campus student profiles",
+      "fields": {
+        "id": { "type": "string", "description": "User UID" },
+        "email": { "type": "string", "description": "Student email" },
+        "fullName": { "type": "string", "description": "Student full name" },
+        "branch": { "type": "string", "description": "Academic department or major" },
+        "year": { "type": "string", "description": "Academic year" },
+        "avatar": { "type": "string", "description": "Initials or avatar text" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
+    },
+    "tasks": {
+      "description": "Academic tasks, lab reports, and assignments for students",
+      "fields": {
+        "id": { "type": "string", "description": "Task identifier" },
+        "userId": { "type": "string", "description": "Owner student UID" },
+        "title": { "type": "string", "description": "Task title" },
+        "subject": { "type": "string", "description": "Course subject name" },
+        "deadline": { "type": "string", "description": "Deadline string description" },
+        "priority": { "type": "string", "description": "High, Medium, or Low" },
+        "duration": { "type": "string", "description": "Estimated duration" },
+        "completed": { "type": "boolean", "description": "Completion flag" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
+    },
+    "doubts": {
+      "description": "Peer academic doubts and questions posted to the campus forum",
+      "fields": {
+        "id": { "type": "string", "description": "Doubt identifier" },
+        "authorId": { "type": "string", "description": "Author UID" },
+        "author": { "type": "string", "description": "Author display name" },
+        "avatar": { "type": "string", "description": "Author avatar badge" },
+        "subject": { "type": "string", "description": "Course name" },
+        "code": { "type": "string", "description": "Course code" },
+        "title": { "type": "string", "description": "Question title" },
+        "body": { "type": "string", "description": "Question body content" },
+        "tags": { "type": "array", "description": "Array of string topic tags" },
+        "upvotes": { "type": "number", "description": "Upvote count" },
+        "voterIds": { "type": "array", "description": "User IDs who upvoted" },
+        "answersCount": { "type": "number", "description": "Number of posted answers" },
+        "solved": { "type": "boolean", "description": "Whether an accepted answer exists" },
+        "acceptedAnswerId": { "type": "string", "description": "Accepted answer ID if solved" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
+    },
+    "answers": {
+      "description": "Answers posted to peer doubts",
+      "fields": {
+        "id": { "type": "string", "description": "Answer identifier" },
+        "doubtId": { "type": "string", "description": "Associated doubt ID" },
+        "authorId": { "type": "string", "description": "Author UID" },
+        "author": { "type": "string", "description": "Author display name" },
+        "avatar": { "type": "string", "description": "Author avatar badge" },
+        "body": { "type": "string", "description": "Answer explanation content" },
+        "upvotes": { "type": "number", "description": "Upvote count" },
+        "voterIds": { "type": "array", "description": "User IDs who upvoted" },
+        "isSolution": { "type": "boolean", "description": "Whether verified as accepted solution" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
+    },
+    "study_plans": {
+      "description": "Personalized AI study plans for exam preparation",
+      "fields": {
+        "id": { "type": "string", "description": "Plan document ID" },
+        "userId": { "type": "string", "description": "Owner student UID" },
+        "targetExam": { "type": "string", "description": "Target exam name" },
+        "items": { "type": "array", "description": "Array of scheduled study session objects" },
+        "config": { "type": "object", "description": "Configuration parameters used for generation" },
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+      }
+    }
+  }
+}

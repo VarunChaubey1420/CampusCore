@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // User Profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Academic Tasks
+    match /tasks/{taskId} {
+      allow read, write: if true;
+    }
+
+    // Peer Doubts & Forum
+    match /doubts/{doubtId} {
+      allow read, write: if true;
+    }
+
+    // Answers to Doubts
+    match /answers/{answerId} {
+      allow read, write: if true;
+    }
+
+    // AI Study Plans
+    match /study_plans/{planId} {
+      allow read, write: if true;
+    }
+  }
+}
