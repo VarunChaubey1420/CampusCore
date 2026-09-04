@@ -5,6 +5,7 @@ import {
   signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile as fbUpdateProfile,
+  sendPasswordResetEmail,
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
@@ -20,7 +21,7 @@ export const STATIC_DEFAULT_USER = {
     display_name: 'Varun Chaubey',
     full_name: 'Varun Chaubey',
     branch: 'Computer Science & Engineering',
-    year: 'Semester 6'
+    year: 'Semester 3'
   }
 };
 
@@ -50,6 +51,12 @@ export function AuthProvider({ children }) {
     if (cachedStatic) {
       try {
         const parsed = JSON.parse(cachedStatic);
+        if (parsed?.user_metadata?.year === 'Semester 6' || parsed?.email?.toLowerCase() === 'varunchaubey757@gmail.com') {
+          if (parsed.user_metadata) {
+            parsed.user_metadata.year = 'Semester 3';
+          }
+          localStorage.setItem('campuscore_static_user', JSON.stringify(parsed));
+        }
         setUser(parsed);
         setIsGuest(false);
       } catch (e) {
@@ -64,7 +71,7 @@ export function AuthProvider({ children }) {
             display_name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Varun Chaubey',
             full_name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Varun Chaubey',
             branch: 'Computer Science & Engineering',
-            year: 'Semester 6'
+            year: 'Semester 3'
           };
 
           if (db) {
@@ -73,13 +80,25 @@ export function AuthProvider({ children }) {
               const userSnap = await getDoc(userRef);
               if (userSnap.exists()) {
                 const data = userSnap.data();
+                const resolvedYear = (fbUser.email?.toLowerCase() === 'varunchaubey757@gmail.com' && (!data.year || data.year === 'Semester 6'))
+                  ? 'Semester 3'
+                  : (data.year || userMeta.year);
+
                 userMeta = {
                   ...userMeta,
                   display_name: data.fullName || userMeta.display_name,
                   full_name: data.fullName || userMeta.full_name,
                   branch: data.branch || userMeta.branch,
-                  year: data.year || userMeta.year
+                  year: resolvedYear,
+                  bio: data.bio || '',
+                  phone: data.phone || '',
+                  targetCgpa: data.targetCgpa || '',
+                  academicInterests: data.academicInterests || ''
                 };
+
+                if (fbUser.email?.toLowerCase() === 'varunchaubey757@gmail.com' && data.year === 'Semester 6') {
+                  setDoc(userRef, { year: 'Semester 3' }, { merge: true }).catch(() => {});
+                }
               }
             } catch (err) {
               console.warn('Could not read user profile from Firestore:', err);
@@ -129,7 +148,7 @@ export function AuthProvider({ children }) {
         display_name: metadata.full_name || 'Varun Chaubey',
         full_name: metadata.full_name || 'Varun Chaubey',
         branch: metadata.branch || 'Computer Science & Engineering',
-        year: metadata.year || 'Semester 6'
+        year: metadata.year || 'Semester 3'
       }
     };
     try {
@@ -151,7 +170,7 @@ export function AuthProvider({ children }) {
         display_name: 'Varun Chaubey',
         full_name: 'Varun Chaubey',
         branch: 'Computer Science & Engineering',
-        year: 'Semester 6'
+        year: 'Semester 3'
       }
     };
     try {
@@ -184,7 +203,7 @@ export function AuthProvider({ children }) {
                 email: cleanEmail,
                 fullName: fullName,
                 branch: metadata.branch || 'Computer Science & Engineering',
-                year: metadata.year || 'Semester 6',
+                year: metadata.year || 'Semester 3',
                 createdAt: Date.now()
               });
             } catch (e) {
@@ -240,7 +259,7 @@ export function AuthProvider({ children }) {
                   email: res.user.email,
                   fullName: res.user.displayName || res.user.email?.split('@')[0] || 'Student',
                   branch: 'Computer Science & Engineering',
-                  year: 'Semester 6',
+                  year: 'Semester 3',
                   createdAt: Date.now()
                 });
               }
@@ -277,6 +296,80 @@ export function AuthProvider({ children }) {
     setIsGuest(false);
   };
 
+  const updateProfile = async (updates) => {
+    if (!user) throw new Error('No active user session');
+    const uid = user.id || user.uid || 'static-varun-chaubey';
+
+    const currentMeta = user.user_metadata || {};
+    const updatedMeta = {
+      ...currentMeta,
+      display_name: updates.fullName !== undefined ? updates.fullName : (currentMeta.display_name || 'Student'),
+      full_name: updates.fullName !== undefined ? updates.fullName : (currentMeta.full_name || 'Student'),
+      branch: updates.branch !== undefined ? updates.branch : (currentMeta.branch || 'Computer Science & Engineering'),
+      year: updates.year !== undefined ? updates.year : (currentMeta.year || 'Semester 1'),
+      bio: updates.bio !== undefined ? updates.bio : (currentMeta.bio || ''),
+      phone: updates.phone !== undefined ? updates.phone : (currentMeta.phone || ''),
+      targetCgpa: updates.targetCgpa !== undefined ? updates.targetCgpa : (currentMeta.targetCgpa || ''),
+      academicInterests: updates.academicInterests !== undefined ? updates.academicInterests : (currentMeta.academicInterests || '')
+    };
+
+    const updatedUser = {
+      ...user,
+      user_metadata: updatedMeta
+    };
+
+    // Update in Firebase Auth if available
+    if (isFirebaseConfigured && auth && auth.currentUser && updates.fullName) {
+      try {
+        await fbUpdateProfile(auth.currentUser, { displayName: updates.fullName });
+      } catch (err) {
+        console.warn('Could not update Firebase Auth displayName:', err);
+      }
+    }
+
+    // Persist to Firestore
+    if (isFirebaseConfigured && db && uid) {
+      try {
+        const userRef = doc(db, 'users', uid);
+        await setDoc(userRef, {
+          id: uid,
+          email: user.email || 'student@campuscore.edu',
+          fullName: updatedMeta.full_name,
+          branch: updatedMeta.branch,
+          year: updatedMeta.year,
+          bio: updatedMeta.bio,
+          phone: updatedMeta.phone,
+          targetCgpa: updatedMeta.targetCgpa,
+          academicInterests: updatedMeta.academicInterests,
+          updatedAt: Date.now()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Error saving updated profile to Firestore:', err);
+      }
+    }
+
+    // Cache in localStorage
+    try {
+      localStorage.setItem('campuscore_static_user', JSON.stringify(updatedUser));
+    } catch (e) {
+      console.warn('Could not cache updated user:', e);
+    }
+
+    setUser(updatedUser);
+    return updatedUser;
+  };
+
+  const resetPassword = async (emailToReset) => {
+    const targetEmail = (emailToReset || user?.email || '').trim();
+    if (!targetEmail) throw new Error('No email address provided for password reset.');
+
+    if (isFirebaseConfigured && auth) {
+      await sendPasswordResetEmail(auth, targetEmail);
+      return true;
+    }
+    return true;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -290,7 +383,9 @@ export function AuthProvider({ children }) {
         signUp,
         signIn,
         signInWithGoogle,
-        signOut
+        signOut,
+        updateProfile,
+        resetPassword
       }}
     >
       {children}
@@ -361,7 +456,7 @@ export function AuthScreen() {
               Full Name
               <input
                 type="text"
-                placeholder="e.g. Varun Chaubey"
+                placeholder="Enter your full name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
@@ -373,7 +468,7 @@ export function AuthScreen() {
             Student Email
             <input
               type="email"
-              placeholder="varunchaubey757@gmail.com"
+              placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -384,7 +479,7 @@ export function AuthScreen() {
             Password
             <input
               type="password"
-              placeholder="••••••••"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

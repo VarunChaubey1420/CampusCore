@@ -113,7 +113,7 @@ export function WorkloadChatbot({ user, tasks = [], plans = [], onTaskAdded, onP
         workloadContext = {
           studentName: user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Student',
           branch: user?.user_metadata?.branch || 'Computer Science & Engineering',
-          year: user?.user_metadata?.year || 'Semester 6',
+          year: user?.user_metadata?.year || 'Semester 3',
           pendingTasks: pending.map(t => ({
             title: t.title,
             due: t.due,

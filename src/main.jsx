@@ -31,14 +31,28 @@ import {
   CheckCheck,
   Bot,
   AlertCircle,
-  AlertTriangle
+  AlertTriangle,
+  Volume2,
+  BellRing,
+  User
 } from 'lucide-react';
 import './styles.css';
 import { AuthProvider, AuthScreen, FirebaseStatusBadge, useAuthSession } from './auth';
 import { LoginPage } from './LoginPage';
 import { LoadingScreen } from './LoadingScreen';
+import { ProfilePage } from './ProfilePage';
 import { FirestoreService } from './lib/firestoreService';
 import { WorkloadChatbot } from './WorkloadChatbot';
+import {
+  isTaskUrgent24h,
+  getUrgentHighPriorityTasks,
+  playAlertChime,
+  triggerTaskAlert,
+  hasTaskBeenAlerted,
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission
+} from './lib/notifications';
 
 const today = new Date();
 const datePlus = (days) => {
@@ -49,10 +63,11 @@ const datePlus = (days) => {
 
 const nav = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { id: 'tasks', label: 'Task Manager', icon: CheckSquare },
   { id: 'advisor', label: 'AI Workload Chat', icon: Bot, isAi: true },
   { id: 'doubts', label: 'Doubt Space', icon: MessageCircleQuestion },
   { id: 'planner', label: 'Study Planner', icon: CalendarDays },
-  { id: 'tasks', label: 'Task Manager', icon: CheckSquare }
+  { id: 'profile', label: 'My Profile', icon: User }
 ];
 
 function Avatar({ initials, green = false }) {
@@ -187,11 +202,57 @@ function Workspace({ user, authConfigured, signOut }) {
     };
   }, [user?.id]);
 
+  // High-Priority Tasks due within the next 24 hours
+  const urgentHighPriorityTasks = useMemo(() => {
+    return getUrgentHighPriorityTasks(tasks);
+  }, [tasks]);
+
+  const [dismissedUrgentIds, setDismissedUrgentIds] = useState(() => new Set());
+
+  // Active urgent tasks visible in the top visual banner
+  const activeUrgentTasks = useMemo(() => {
+    return urgentHighPriorityTasks.filter(t => !dismissedUrgentIds.has(t.id));
+  }, [urgentHighPriorityTasks, dismissedUrgentIds]);
+
+  // Trigger audio alert chime and desktop notification once per urgent task
+  useEffect(() => {
+    if (urgentHighPriorityTasks.length > 0) {
+      const unalerted = urgentHighPriorityTasks.find(t => !hasTaskBeenAlerted(t.id));
+      if (unalerted) {
+        triggerTaskAlert(unalerted, { playSound: true });
+      }
+    }
+  }, [urgentHighPriorityTasks]);
+
+  // Global listener for notification-driven task views
+  useEffect(() => {
+    const handleViewTask = () => {
+      setPage('tasks');
+    };
+    window.addEventListener('campuscore-view-task', handleViewTask);
+    return () => window.removeEventListener('campuscore-view-task', handleViewTask);
+  }, []);
+
   // Generate dynamic academic notifications
   const notifications = useMemo(() => {
     const list = [];
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
+
+    // 0. High-Priority tasks due within 24 hours (Top priority alert banner & items)
+    urgentHighPriorityTasks.forEach(t => {
+      list.push({
+        id: `urgent-24h-${t.id}`,
+        type: 'urgent',
+        title: `High Priority: ${t.title}`,
+        desc: `${t.urgencyLabel} · ${t.category || 'Assignment'} deadline`,
+        target: 'tasks',
+        taskId: t.id,
+        time: t.urgencyLabel,
+        isUrgent: true,
+        task: t
+      });
+    });
 
     // 1. Overdue & Due Today tasks
     tasks.filter(t => t.status !== 'Completed').forEach(t => {
@@ -272,7 +333,7 @@ function Workspace({ user, authConfigured, signOut }) {
     });
 
     return list;
-  }, [tasks, doubts, plans]);
+  }, [tasks, doubts, plans, urgentHighPriorityTasks]);
 
   const unreadCount = notifications.filter(n => !readNotifIds.has(n.id)).length;
 
@@ -347,6 +408,16 @@ function Workspace({ user, authConfigured, signOut }) {
         setTasks={setTasks}
         onTaskAdded={() => showToast('Task saved permanently to Firebase!')}
       />
+    ),
+    profile: (
+      <ProfilePage
+        user={user}
+        tasks={tasks}
+        doubts={doubts}
+        plans={plans}
+        onProfileUpdated={() => showToast('Profile updated & synced with Firebase Firestore!')}
+        onNavigate={(p) => setPage(p)}
+      />
     )
   }[page]);
 
@@ -384,18 +455,29 @@ function Workspace({ user, authConfigured, signOut }) {
               Create plan <ChevronRight size={14} />
             </button>
           </div>
-          <div className="profile">
+          <div
+            className={`profile clickable-profile ${page === 'profile' ? 'active-profile-card' : ''}`}
+            onClick={() => setPage('profile')}
+            title="Click to view and edit student profile"
+            role="button"
+            tabIndex={0}
+          >
             <Avatar initials={initials} green />
             <div className="profile-info">
               <strong title={displayName}>{displayName}</strong>
-              <small title={user?.email || 'Student Account'}>{user?.email || 'Student Account'}</small>
+              <small title={user?.user_metadata?.branch || user?.email || 'Student Account'}>
+                {user?.user_metadata?.branch || user?.email || 'Student Account'}
+              </small>
             </div>
             {authConfigured && (
               <button
                 className="profile-signout"
                 title="Sign out / Switch account"
                 aria-label="Sign out"
-                onClick={signOut}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  signOut();
+                }}
               >
                 <LogOut size={16} />
               </button>
@@ -435,8 +517,13 @@ function Workspace({ user, authConfigured, signOut }) {
                 <NotificationsPopover
                   notifications={notifications}
                   readNotifIds={readNotifIds}
+                  urgentTasks={urgentHighPriorityTasks}
                   onMarkAllRead={markAllNotifsRead}
                   onSelectNotification={handleSelectNotif}
+                  onToggleTask={async (task) => {
+                    await FirestoreService.toggleTaskStatus(task.id, task.status);
+                    showToast(`Marked "${task.title}" as completed`);
+                  }}
                   onClose={() => setShowNotif(false)}
                 />
               )}
@@ -480,9 +567,36 @@ function Workspace({ user, authConfigured, signOut }) {
                 />
               )}
             </div>
+
+            <button
+              className={`topbar-profile-pill ${page === 'profile' ? 'active' : ''}`}
+              title="Manage student profile"
+              aria-label="Manage student profile"
+              onClick={() => setPage('profile')}
+            >
+              <Avatar initials={initials} green />
+              <span className="topbar-profile-name">{displayName.split(' ')[0]}</span>
+            </button>
           </div>
         </header>
-        <section className="content">{renderPage()}</section>
+        <section className="content">
+          {activeUrgentTasks.length > 0 && (
+            <UrgentTaskBanner
+              urgentTasks={activeUrgentTasks}
+              onNavigateToTasks={(task) => {
+                setPage('tasks');
+              }}
+              onMarkTaskDone={async (task) => {
+                await FirestoreService.toggleTaskStatus(task.id, task.status);
+                showToast(`Marked "${task.title}" as completed`);
+              }}
+              onDismiss={(taskId) => {
+                setDismissedUrgentIds(prev => new Set([...prev, taskId]));
+              }}
+            />
+          )}
+          {renderPage()}
+        </section>
         {toastMessage && (
           <div className="sync-toast">
             <CheckCheck size={18} style={{ color: '#4ade80' }} />
@@ -741,6 +855,7 @@ function DoubtSpace({ user, doubts, showDoubt, setShowDoubt, activeDoubt, setAct
         </select>
         <select value={semester} onChange={e => setSemester(e.target.value)}>
           <option>All semesters</option>
+          <option>Semester 3</option>
           <option>Semester 4</option>
           <option>Semester 6</option>
         </select>
@@ -817,8 +932,8 @@ function DoubtModal({ user, onClose, onAdd }) {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    subject: 'Machine Learning',
-    semester: 'Semester 6'
+    subject: 'Data Structures & Algorithms',
+    semester: user?.user_metadata?.year || 'Semester 3'
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -866,8 +981,14 @@ function DoubtModal({ user, onClose, onAdd }) {
           <label>
             Semester
             <select value={form.semester} onChange={e => setForm({ ...form, semester: e.target.value })}>
+              <option>Semester 1</option>
+              <option>Semester 2</option>
+              <option>Semester 3</option>
               <option>Semester 4</option>
+              <option>Semester 5</option>
               <option>Semester 6</option>
+              <option>Semester 7</option>
+              <option>Semester 8</option>
             </select>
           </label>
         </div>
@@ -1199,11 +1320,23 @@ function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
     items.map(t => {
       const done = t.status === 'Completed';
       const overdue = !done && isTaskOverdue(t.due);
+      const urgent24h = !done && isTaskUrgent24h(t);
       return (
-        <article className={'task-card ' + (done ? 'completed ' : '') + (overdue ? 'overdue' : '')} key={t.id}>
+        <article
+          className={'task-card ' + (done ? 'completed ' : '') + (overdue ? 'overdue ' : '') + (urgent24h ? 'urgent-24h ' : '')}
+          key={t.id}
+          id={`task-card-${t.id}`}
+        >
           <div className="task-card-top">
             <div>
-              <h3>{t.title}</h3>
+              <h3>
+                {t.title}
+                {urgent24h && (
+                  <span className="urgent-24h-card-badge" title="High priority due within 24 hours">
+                    <i /> Due &lt;24h
+                  </span>
+                )}
+              </h3>
               {t.description && <p>{t.description}</p>}
             </div>
             <span className={'priority-badge ' + (t.priority || 'Medium').toLowerCase()}>
@@ -1213,7 +1346,9 @@ function TaskManager({ user, tasks, setTasks, onTaskAdded }) {
           <div className="task-card-meta">
             <span>{t.category || 'General'}</span>
             <b>·</b>
-            <span className={overdue ? 'overdue-label' : ''}>{taskDueLabel(t.due, done)}</span>
+            <span className={overdue || urgent24h ? 'overdue-label' : ''}>
+              {urgent24h ? `🚨 ${taskDueLabel(t.due, done)}` : taskDueLabel(t.due, done)}
+            </span>
             {done && (
               <>
                 <b>·</b>
@@ -1503,7 +1638,15 @@ function taskDueLabel(d, completed) {
   return `Due ${formatDate(d)}`;
 }
 
-function NotificationsPopover({ notifications, readNotifIds, onMarkAllRead, onSelectNotification, onClose }) {
+function NotificationsPopover({
+  notifications,
+  readNotifIds,
+  urgentTasks = [],
+  onMarkAllRead,
+  onSelectNotification,
+  onToggleTask,
+  onClose
+}) {
   const unreadCount = notifications.filter(n => !readNotifIds.has(n.id)).length;
 
   return (
@@ -1520,6 +1663,26 @@ function NotificationsPopover({ notifications, readNotifIds, onMarkAllRead, onSe
         )}
       </div>
 
+      {urgentTasks.length > 0 && (
+        <div className="notif-section-urgent">
+          <span className="notif-section-urgent-title">
+            <AlertTriangle size={13} /> {urgentTasks.length} Urgent Alert{urgentTasks.length > 1 ? 's' : ''} (&lt;24h)
+          </span>
+          {isNotificationSupported() && getNotificationPermission() !== 'granted' && (
+            <button
+              className="notif-mark-read"
+              style={{ fontSize: 11, color: '#ea580c' }}
+              onClick={async (e) => {
+                e.stopPropagation();
+                await requestNotificationPermission();
+              }}
+            >
+              Enable alerts
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="notif-list">
         {notifications.length === 0 ? (
           <div className="notif-empty">
@@ -1530,13 +1693,15 @@ function NotificationsPopover({ notifications, readNotifIds, onMarkAllRead, onSe
         ) : (
           notifications.map(item => {
             const isUnread = !readNotifIds.has(item.id);
+            const isUrgent = item.type === 'urgent';
             return (
               <div
                 key={item.id}
-                className={`notif-item ${isUnread ? 'unread' : ''}`}
+                className={`notif-item ${isUnread ? 'unread' : ''} ${isUrgent ? 'urgent-item' : ''}`}
                 onClick={() => onSelectNotification(item)}
               >
                 <div className={`notif-icon-wrap ${item.type}`}>
+                  {item.type === 'urgent' && <AlertTriangle size={16} />}
                   {item.type === 'overdue' && <AlertTriangle size={16} />}
                   {item.type === 'today' && <Clock3 size={16} />}
                   {item.type === 'high' && <AlertCircle size={16} />}
@@ -1551,11 +1716,117 @@ function NotificationsPopover({ notifications, readNotifIds, onMarkAllRead, onSe
                   </div>
                   <p className="notif-desc">{item.desc}</p>
                 </div>
-                {isUnread && <span className="notif-unread-dot" />}
+                {isUrgent && onToggleTask && item.task && (
+                  <button
+                    className="notif-badge-quickdone"
+                    title="Mark task completed"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTask(item.task);
+                    }}
+                  >
+                    Done
+                  </button>
+                )}
+                {isUnread && !isUrgent && <span className="notif-unread-dot" />}
               </div>
             );
           })
         )}
+      </div>
+    </div>
+  );
+}
+
+function UrgentTaskBanner({
+  urgentTasks,
+  onNavigateToTasks,
+  onMarkTaskDone,
+  onDismiss
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const safeIndex = Math.min(currentIndex, Math.max(0, urgentTasks.length - 1));
+  const task = urgentTasks[safeIndex];
+  if (!task) return null;
+
+  return (
+    <div className="urgent-task-banner" role="alert" aria-live="assertive">
+      <div className="urgent-banner-left">
+        <div className="urgent-beacon-wrap">
+          <AlertTriangle size={20} />
+          <span className="urgent-beacon-pulse" />
+        </div>
+        <div className="urgent-banner-text">
+          <div className="urgent-banner-header-row">
+            <span className="urgent-tag-badge">High Priority Alert</span>
+            <span className={`urgent-countdown-pill ${task.isOverdue ? 'overdue' : ''}`}>
+              <Clock3 size={12} />
+              {task.urgencyLabel}
+            </span>
+            {urgentTasks.length > 1 && (
+              <span className="urgent-countdown-pill" style={{ opacity: 0.85 }}>
+                {safeIndex + 1} of {urgentTasks.length} urgent
+              </span>
+            )}
+          </div>
+          <h4 className="urgent-task-title" title={task.title}>
+            {task.title}
+          </h4>
+          {task.description && (
+            <p className="urgent-task-desc" title={task.description}>
+              {task.description}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="urgent-banner-actions">
+        {urgentTasks.length > 1 && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              className="urgent-action-btn chime"
+              title="Previous urgent task"
+              onClick={() => setCurrentIndex((safeIndex - 1 + urgentTasks.length) % urgentTasks.length)}
+            >
+              ◀
+            </button>
+            <button
+              className="urgent-action-btn chime"
+              title="Next urgent task"
+              onClick={() => setCurrentIndex((safeIndex + 1) % urgentTasks.length)}
+            >
+              ▶
+            </button>
+          </div>
+        )}
+        <button
+          className="urgent-action-btn chime"
+          title="Play alert chime"
+          onClick={() => playAlertChime()}
+        >
+          <Volume2 size={15} />
+        </button>
+        <button
+          className="urgent-action-btn secondary"
+          onClick={() => onMarkTaskDone(task)}
+        >
+          <Check size={14} /> Mark Done
+        </button>
+        <button
+          className="urgent-action-btn primary"
+          onClick={() => onNavigateToTasks(task)}
+        >
+          View in Tasks <ChevronRight size={14} />
+        </button>
+        <button
+          className="urgent-dismiss-btn"
+          title="Dismiss alert banner"
+          aria-label="Dismiss alert banner"
+          onClick={() => onDismiss(task.id)}
+        >
+          <X size={16} />
+        </button>
       </div>
     </div>
   );
@@ -1677,9 +1948,10 @@ function SearchCommandPalette({
   const navOptions = [
     { id: 'dashboard', label: 'Dashboard', sub: 'Academic summary & upcoming deliverables', icon: LayoutDashboard },
     { id: 'tasks', label: 'Tasks Board', sub: 'Manage assignments, practicals & exams', icon: CheckSquare },
+    { id: 'advisor', label: 'AI Workload Advisor', sub: 'Ask Gemini workload assistant', icon: Bot },
     { id: 'doubts', label: 'Doubts Forum', sub: 'Peer Q&A, answers & verified solutions', icon: MessageCircleQuestion },
     { id: 'planner', label: 'Study Planner', sub: 'AI semester roadmap & study sessions', icon: CalendarDays },
-    { id: 'advisor', label: 'AI Workload Advisor', sub: 'Ask Gemini workload assistant', icon: Bot },
+    { id: 'profile', label: 'My Student Profile', sub: 'Manage department, semester, roll number & bio', icon: User }
   ].filter(n => !q || n.label.toLowerCase().includes(q) || n.sub.toLowerCase().includes(q));
 
   const hasMatches = matchedTasks.length > 0 || matchedDoubts.length > 0 || matchedSessions.length > 0 || (q && navOptions.length > 0);

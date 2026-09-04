@@ -9,8 +9,13 @@
         "fullName": { "type": "string", "description": "Student full name" },
         "branch": { "type": "string", "description": "Academic department or major" },
         "year": { "type": "string", "description": "Academic year" },
+        "bio": { "type": "string", "description": "Student bio and academic focus" },
+        "phone": { "type": "string", "description": "Student contact phone number" },
+        "targetCgpa": { "type": "string", "description": "Target CGPA goal" },
+        "academicInterests": { "type": "string", "description": "Specializations and interests" },
         "avatar": { "type": "string", "description": "Initials or avatar text" },
-        "createdAt": { "type": "number", "description": "Creation timestamp ms" }
+        "createdAt": { "type": "number", "description": "Creation timestamp ms" },
+        "updatedAt": { "type": "number", "description": "Last profile update timestamp ms" }
       }
     },
     "tasks": {

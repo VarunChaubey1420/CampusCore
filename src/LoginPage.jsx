@@ -22,8 +22,8 @@ export function LoginPage({ onLoginStart }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [branch, setBranch] = useState('Computer Science & Engineering');
-  const [year, setYear] = useState('Semester 1');
+  const [branch, setBranch] = useState('');
+  const [year, setYear] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -76,6 +76,16 @@ export function LoginPage({ onLoginStart }) {
       if (isRegister) {
         if (!fullName.trim()) {
           setError('Please provide your full name');
+          setBusy(false);
+          return;
+        }
+        if (!branch) {
+          setError('Please select your department');
+          setBusy(false);
+          return;
+        }
+        if (!year) {
+          setError('Please select your semester / year');
           setBusy(false);
           return;
         }
@@ -179,7 +189,7 @@ export function LoginPage({ onLoginStart }) {
                     <input
                       id="fullName"
                       type="text"
-                      placeholder="e.g. Varun Chaubey"
+                      placeholder="Enter your full name"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       required
@@ -196,8 +206,10 @@ export function LoginPage({ onLoginStart }) {
                         id="branch"
                         value={branch}
                         onChange={(e) => setBranch(e.target.value)}
-                        className="login-select"
+                        className={`login-select ${!branch ? 'placeholder-selected' : ''}`}
+                        required
                       >
+                        <option value="" disabled>Select Department</option>
                         {departments.map((dept) => (
                           <option key={dept} value={dept}>
                             {dept}
@@ -215,8 +227,10 @@ export function LoginPage({ onLoginStart }) {
                         id="year"
                         value={year}
                         onChange={(e) => setYear(e.target.value)}
-                        className="login-select"
+                        className={`login-select ${!year ? 'placeholder-selected' : ''}`}
+                        required
                       >
+                        <option value="" disabled>Select Semester</option>
                         {semesters.map((sem) => (
                           <option key={sem} value={sem}>
                             {sem}
@@ -237,7 +251,7 @@ export function LoginPage({ onLoginStart }) {
                 <input
                   id="email"
                   type="email"
-                  placeholder="varunchaubey757@gmail.com"
+                  placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -265,7 +279,7 @@ export function LoginPage({ onLoginStart }) {
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required

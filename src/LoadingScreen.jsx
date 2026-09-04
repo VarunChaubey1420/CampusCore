@@ -46,7 +46,7 @@ export function LoadingScreen({ user, onFinished }) {
     (user?.email ? user.email.split('@')[0] : 'Varun Chaubey');
 
   const branch = user?.user_metadata?.branch || 'Computer Science & Engineering';
-  const year = user?.user_metadata?.year || 'Semester 6';
+  const year = user?.user_metadata?.year || 'Semester 3';
 
   // Smooth continuous 60fps animation using requestAnimationFrame
   useEffect(() => {
