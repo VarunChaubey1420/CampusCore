@@ -49,7 +49,7 @@ const STARTER_PROMPTS = [
   }
 ];
 
-export function WorkloadChatbot({ user, tasks = [], plans = [], onTaskAdded, onPlanAdded, showToast }) {
+export function WorkloadChatbot({ user, tasks = [], plans = [], onTaskAdded, onPlanAdded, showToast, initialPrompt = '' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,6 +59,17 @@ export function WorkloadChatbot({ user, tasks = [], plans = [], onTaskAdded, onP
   const [addedActionIds, setAddedActionIds] = useState(new Set());
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const handledInitialRef = useRef(null);
+
+  useEffect(() => {
+    if (initialPrompt && handledInitialRef.current !== initialPrompt) {
+      handledInitialRef.current = initialPrompt;
+      setInput(initialPrompt);
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
+  }, [initialPrompt]);
 
   // Subscribe to persistent chat history from Firestore
   useEffect(() => {

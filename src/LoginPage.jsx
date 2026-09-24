@@ -12,7 +12,8 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
-  Loader2
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 import { useAuthSession } from './auth';
 
@@ -115,25 +116,44 @@ export function LoginPage({ onLoginStart }) {
 
   return (
     <div className="login-page-container">
-      <div className="login-backdrop-glow" />
+      {/* Podia-inspired playful geometric floating confetti shapes */}
+      <div className="podia-shape shape-amber-circle" aria-hidden="true" />
+      <div className="podia-shape shape-coral-tri" aria-hidden="true" />
+      <div className="podia-shape shape-blue-hex" aria-hidden="true" />
+      <div className="podia-shape shape-purple-blob" aria-hidden="true" />
+      <div className="podia-shape shape-teal-pill" aria-hidden="true" />
+      <div className="podia-shape shape-orange-cube" aria-hidden="true" />
+
+      {/* Top minimal header inspired by Podia nav */}
+      <header className="podia-login-topbar">
+        <div className="podia-logo-wrap">
+          <span className="podia-logo-mark">
+            <GraduationCap size={20} />
+          </span>
+          <span className="podia-logo-name">campus<span>core</span></span>
+        </div>
+        <div className="podia-topbar-actions">
+          <button
+            type="button"
+            className="podia-link-btn"
+            onClick={() => setIsRegister(!isRegister)}
+          >
+            {isRegister ? 'Already a student? Sign in' : 'New student? Register'}
+          </button>
+        </div>
+      </header>
 
       <div className="login-card-wrapper">
         <div className="login-card">
           {/* Logo & Header */}
           <div className="login-header">
-            <div className="login-brand">
-              <span className="login-brand-icon">
-                <GraduationCap size={24} />
-              </span>
-              <span className="login-brand-text">
-                Campus<span>Core</span>
-              </span>
-            </div>
-            <h1>{isRegister ? 'Create student account' : 'Welcome back'}</h1>
+            <h1 className="podia-hero-headline">
+              {isRegister ? 'The all-in-one for your semester.' : 'The all-in-one for teams of one.'}
+            </h1>
             <p className="login-subtitle">
               {isRegister
-                ? 'Register your academic profile to sync your tasks, doubts, and AI study roadmaps.'
-                : 'Sign in to access your synchronized semester command center, assignments, and campus forum.'}
+                ? 'Join students running their coursework, live doubts, study sprints, and assignments in one playful workspace.'
+                : 'Sign in to access your student command center, tasks, AI workload advisor, and campus forum.'}
             </p>
           </div>
 
@@ -350,14 +370,6 @@ export function LoginPage({ onLoginStart }) {
               <span>Continue with Google</span>
             </button>
           </form>
-
-          {/* Footer note */}
-          <div className="login-footer">
-            <div className="login-security-note">
-              <ShieldCheck size={14} />
-              <span>Protected by Firebase Authentication & Firestore Cloud Security</span>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -15,9 +15,11 @@
     "express": "^5.2.1",
     "firebase": "^12.18.0",
     "lucide-react": "latest",
+    "pdfkit": "^0.20.2",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "^10.1.0",
+    "recharts": "^3.10.1",
     "vite": "latest"
   },
   "devDependencies": {

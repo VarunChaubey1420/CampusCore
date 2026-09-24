@@ -34,7 +34,9 @@ import {
   AlertTriangle,
   Volume2,
   BellRing,
-  User
+  User,
+  Target,
+  Zap
 } from 'lucide-react';
 import './styles.css';
 import { AuthProvider, AuthScreen, FirebaseStatusBadge, useAuthSession } from './auth';
@@ -369,13 +371,39 @@ function Workspace({ user, authConfigured, signOut }) {
   const displayName = user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Varun Chaubey';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'VC';
 
+  const [advisorInitialPrompt, setAdvisorInitialPrompt] = useState('');
+
+  const navigateToAdvisor = (promptText = '') => {
+    if (promptText) setAdvisorInitialPrompt(promptText);
+    setPage('advisor');
+  };
+
   const renderPage = () => ({
-    dashboard: <Dashboard user={user} doubts={doubts} tasks={tasks} plans={plans} navigate={setPage} />,
+    dashboard: (
+      <Dashboard
+        user={user}
+        doubts={doubts}
+        tasks={tasks}
+        plans={plans}
+        navigate={setPage}
+        onNavigateAdvisor={navigateToAdvisor}
+        onToggleTask={async (task) => {
+          await FirestoreService.toggleTaskStatus(task.id, task.status);
+          showToast(`Marked "${task.title}" as completed`);
+        }}
+        onQuickTask={() => setShowQuickTask(true)}
+        onAskDoubt={() => {
+          setPage('doubts');
+          setShowDoubt(true);
+        }}
+      />
+    ),
     advisor: (
       <WorkloadChatbot
         user={user}
         tasks={tasks}
         plans={plans}
+        initialPrompt={advisorInitialPrompt}
         onTaskAdded={() => showToast('Task saved to Firebase!')}
         onPlanAdded={() => showToast('Roadmap saved to Firebase!')}
         showToast={showToast}
@@ -422,96 +450,71 @@ function Workspace({ user, authConfigured, signOut }) {
   }[page]);
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark"><GraduationCap size={22} /></span>
-          <span>Campus<span>Core</span></span>
-        </div>
-        <div className="side-label">WORKSPACE</div>
-        <nav>
-          {nav.map(n => {
-            const Icon = n.icon;
-            return (
-              <button
-                className={'nav-link ' + (page === n.id ? 'active' : '')}
-                key={n.id}
-                onClick={() => setPage(n.id)}
-              >
-                <Icon size={19} />
-                {n.label}
-                {n.id === 'advisor' && <span className="nav-ai-pill"><Sparkles size={11} /> AI</span>}
-                {n.id === 'tasks' && pending.length > 0 && <b>{pending.length}</b>}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="pro-card">
-            <Sparkles size={17} />
-            <strong>Study smarter</strong>
-            <small>Plan your semester with AI.</small>
-            <button onClick={() => setPage('planner')}>
-              Create plan <ChevronRight size={14} />
-            </button>
-          </div>
+    <div className="podia-app-shell">
+      {/* Podia playful geometric floating confetti shapes */}
+      <div className="podia-shape shape-amber-circle" aria-hidden="true" />
+      <div className="podia-shape shape-coral-tri" aria-hidden="true" />
+      <div className="podia-shape shape-blue-hex" aria-hidden="true" />
+      <div className="podia-shape shape-purple-blob" aria-hidden="true" />
+      <div className="podia-shape shape-teal-pill" aria-hidden="true" />
+      <div className="podia-shape shape-orange-cube" aria-hidden="true" />
+
+      {/* Modern Podia Top Navigation Bar */}
+      <header className="podia-main-topbar">
+        <div className="podia-topbar-inner">
           <div
-            className={`profile clickable-profile ${page === 'profile' ? 'active-profile-card' : ''}`}
-            onClick={() => setPage('profile')}
-            title="Click to view and edit student profile"
+            className="podia-logo-wrap"
+            onClick={() => setPage('dashboard')}
             role="button"
             tabIndex={0}
+            title="CampusCore Home"
           >
-            <Avatar initials={initials} green />
-            <div className="profile-info">
-              <strong title={displayName}>{displayName}</strong>
-              <small title={user?.user_metadata?.branch || user?.email || 'Student Account'}>
-                {user?.user_metadata?.branch || user?.email || 'Student Account'}
-              </small>
-            </div>
-            {authConfigured && (
-              <button
-                className="profile-signout"
-                title="Sign out / Switch account"
-                aria-label="Sign out"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  signOut();
-                }}
-              >
-                <LogOut size={16} />
-              </button>
-            )}
+            <span className="podia-logo-mark">
+              <GraduationCap size={20} />
+            </span>
+            <span className="podia-logo-name">campus<span>core</span></span>
           </div>
-        </div>
-      </aside>
-      <main>
-        <header className="topbar">
-          <div className="crumb">
-            <span>CampusCore</span>
-            <ChevronRight size={15} />
-            <strong>{nav.find(n => n.id === page)?.label}</strong>
-          </div>
-          <div className="top-actions">
+
+          <nav className="podia-nav-tabs">
+            {nav.map(n => {
+              const Icon = n.icon;
+              const isActive = page === n.id;
+              return (
+                <button
+                  className={`podia-tab-link ${isActive ? 'active' : ''}`}
+                  key={n.id}
+                  onClick={() => setPage(n.id)}
+                >
+                  <Icon size={16} />
+                  <span>{n.label}</span>
+                  {n.id === 'advisor' && <span className="podia-tab-sparkle"><Sparkles size={11} /> AI</span>}
+                  {n.id === 'tasks' && pending.length > 0 && <b className="podia-tab-count">{pending.length}</b>}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="podia-topbar-actions">
             <FirebaseStatusBadge />
+
             <button
-              className="icon-btn"
+              className="podia-icon-btn"
               title="Search (⌘K)"
               aria-label="Search"
               onClick={() => setShowSearch(true)}
             >
-              <Search size={19} />
+              <Search size={18} />
             </button>
 
             <div className="top-action-anchor" ref={notifRef}>
               <button
-                className={`icon-btn notification ${unreadCount > 0 ? 'has-unread' : ''}`}
+                className={`podia-icon-btn ${unreadCount > 0 ? 'has-unread' : ''}`}
                 title="Notifications"
                 aria-label={`Notifications (${unreadCount} unread)`}
                 onClick={() => setShowNotif(prev => !prev)}
               >
-                <Bell size={19} />
-                {unreadCount > 0 && <i />}
+                <Bell size={18} />
+                {unreadCount > 0 && <span className="podia-unread-dot" />}
               </button>
               {showNotif && (
                 <NotificationsPopover
@@ -531,14 +534,14 @@ function Workspace({ user, authConfigured, signOut }) {
 
             <div className="top-action-anchor" ref={quickAddRef}>
               <button
-                className="new-btn"
+                className="podia-primary-pill-btn"
                 title="Quick add"
                 aria-label="Quick add"
                 onClick={() => setShowQuickAdd(prev => !prev)}
               >
-                <Plus size={18} />
-                <span>{page === 'doubts' ? 'Post doubt' : page === 'tasks' ? 'New task' : 'Quick add'}</span>
-                <ChevronDown size={14} style={{ marginLeft: 2, opacity: 0.85 }} />
+                <Plus size={16} />
+                <span>Quick add</span>
+                <ChevronDown size={13} style={{ opacity: 0.8 }} />
               </button>
               {showQuickAdd && (
                 <QuickAddMenu
@@ -568,35 +571,50 @@ function Workspace({ user, authConfigured, signOut }) {
               )}
             </div>
 
-            <button
-              className={`topbar-profile-pill ${page === 'profile' ? 'active' : ''}`}
-              title="Manage student profile"
-              aria-label="Manage student profile"
-              onClick={() => setPage('profile')}
-            >
-              <Avatar initials={initials} green />
-              <span className="topbar-profile-name">{displayName.split(' ')[0]}</span>
-            </button>
+            <div className="podia-user-chip-wrap">
+              <button
+                className={`podia-user-chip ${page === 'profile' ? 'active' : ''}`}
+                title="Manage student profile"
+                aria-label="Manage student profile"
+                onClick={() => setPage('profile')}
+              >
+                <Avatar initials={initials} green />
+                <span className="podia-chip-name">{displayName.split(' ')[0]}</span>
+              </button>
+
+              {authConfigured && (
+                <button
+                  className="podia-signout-btn"
+                  title="Sign out / Switch account"
+                  aria-label="Sign out"
+                  onClick={signOut}
+                >
+                  <LogOut size={15} />
+                </button>
+              )}
+            </div>
           </div>
-        </header>
-        <section className="content">
-          {activeUrgentTasks.length > 0 && (
-            <UrgentTaskBanner
-              urgentTasks={activeUrgentTasks}
-              onNavigateToTasks={(task) => {
-                setPage('tasks');
-              }}
-              onMarkTaskDone={async (task) => {
-                await FirestoreService.toggleTaskStatus(task.id, task.status);
-                showToast(`Marked "${task.title}" as completed`);
-              }}
-              onDismiss={(taskId) => {
-                setDismissedUrgentIds(prev => new Set([...prev, taskId]));
-              }}
-            />
-          )}
-          {renderPage()}
-        </section>
+        </div>
+      </header>
+
+      <main className="podia-main-content">
+        {activeUrgentTasks.length > 0 && (
+          <UrgentTaskBanner
+            urgentTasks={activeUrgentTasks}
+            onNavigateToTasks={(task) => {
+              setPage('tasks');
+            }}
+            onMarkTaskDone={async (task) => {
+              await FirestoreService.toggleTaskStatus(task.id, task.status);
+              showToast(`Marked "${task.title}" as completed`);
+            }}
+            onDismiss={(taskId) => {
+              setDismissedUrgentIds(prev => new Set([...prev, taskId]));
+            }}
+          />
+        )}
+        {renderPage()}
+      </main>
         {toastMessage && (
           <div className="sync-toast">
             <CheckCheck size={18} style={{ color: '#4ade80' }} />
@@ -639,150 +657,434 @@ function Workspace({ user, authConfigured, signOut }) {
             onSaved={() => showToast('Task saved to Firebase!')}
           />
         )}
-      </main>
     </div>
   );
 }
 
-function Dashboard({ user, doubts, tasks, plans, navigate }) {
+function Dashboard({
+  user,
+  doubts = [],
+  tasks = [],
+  plans = [],
+  navigate,
+  onNavigateAdvisor,
+  onToggleTask,
+  onQuickTask,
+  onAskDoubt
+}) {
   const upcoming = plans.flatMap(p => p.sessions || []).slice(0, 3);
   const userMeta = user?.user_metadata || {};
-  const studentName = userMeta.display_name || userMeta.full_name || user?.email?.split('@')[0] || 'Student';
-  const dept = userMeta.branch || 'Campus Student';
-  const sem = userMeta.year || '';
+  const studentName = userMeta.display_name || userMeta.full_name || user?.email?.split('@')[0] || 'Varun Chaubey';
+  const firstName = studentName.split(' ')[0] || 'Varun';
+  const dept = userMeta.branch || 'Computer Science & Engineering';
+  const sem = userMeta.year || 'Semester 3';
+  const targetCgpa = userMeta.target_cgpa || '9.0';
 
-  // Calculate dynamic reputation based on real user activity
+  const pendingTasks = tasks.filter(t => t.status !== 'Completed');
+  const completedTasks = tasks.filter(t => t.status === 'Completed');
+
+  // Urgent tasks due within 24h
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const urgentCount = pendingTasks.filter(t => t.priority === 'High' || t.due === todayStr).length;
+
+  // Dynamic student reputation
   const userDoubts = doubts.filter(d => d.author === studentName || d.userId === user?.id);
   const totalAnswers = doubts.reduce((acc, d) => acc + (d.answers?.filter(a => a.author === studentName || a.userId === user?.id)?.length || 0), 0);
-  const dynamicRep = (userDoubts.length * 5) + (totalAnswers * 10);
+  const dynamicRep = (userDoubts.length * 5) + (totalAnswers * 10) + (completedTasks.length * 2);
 
   return (
-    <>
-      <div className="page-heading">
-        <div>
-          {dept && <p className="eyebrow">{dept.toUpperCase()}{sem ? ` · ${sem.toUpperCase()}` : ''}</p>}
-          <h1>Good day, {studentName} <span>✦</span></h1>
-          <p>Your academic tasks and peer doubts are securely synchronized in Firebase.</p>
-        </div>
-        <button className="outline-btn" onClick={() => navigate('planner')}>
-          <Sparkles size={16} /> Build study plan
-        </button>
-      </div>
-      <div className="stat-grid">
-        <Stat icon={<CircleHelp />} tint="blue" value={doubts.length} label="Active doubts" note="in campus forum" />
-        <Stat icon={<Calendar />} tint="purple" value={upcoming.length} label="Study sessions" note="scheduled in cloud" />
-        <Stat icon={<CheckSquare />} tint="orange" value={tasks.filter(t => t.status !== 'Completed').length} label="Pending tasks" note="saved in Firebase" />
-        <Stat icon={<BarChart3 />} tint="green" value={dynamicRep} label="Reputation" note={`${userDoubts.length + totalAnswers} contributions`} />
-      </div>
-
-      {/* AI Workload Assistant Banner */}
-      <div className="panel ai-advisor-banner" onClick={() => navigate('advisor')} role="button" tabIndex={0}>
-        <div className="ai-advisor-banner-left">
-          <div className="ai-banner-icon-badge">
-            <Bot size={22} />
-          </div>
-          <div>
-            <div className="ai-banner-badge-row">
-              <span className="ai-chip-pill"><Sparkles size={12} /> Gemini Powered</span>
-              <span className="ai-chip-sub">Workload Strategist</span>
-            </div>
-            <h3>Struggling with heavy deadlines?</h3>
-            <p>
-              Ask your AI Advisor to prioritize your {tasks.filter(t => t.status !== 'Completed').length} pending tasks, create 45-min focus sprints, and schedule your week.
+    <div className="podia-dashboard-root">
+      {/* 1. Podia Hero Welcome Card */}
+      <section className="podia-home-hero">
+        <div className="podia-home-hero-top">
+          <div className="podia-hero-meta">
+            <span className="podia-hero-eyebrow">
+              <Sparkles size={12} />
+              <span>{dept.toUpperCase()} · {sem.toUpperCase()}</span>
+            </span>
+            <h1 className="podia-hero-greeting">
+              Good day, {firstName} <span className="greeting-sparkle">✦</span>
+            </h1>
+            <p className="podia-hero-subcopy">
+              Your academic tasks, live peer doubts, and study sprints — all in one playful campus desk.
             </p>
           </div>
+          <div className="podia-hero-badges-row">
+            <span className="podia-metric-chip teal">
+              <CheckCircle2 size={13} />
+              <b>{completedTasks.length}/{tasks.length || 0}</b> Tasks done
+            </span>
+            <span className="podia-metric-chip lavender">
+              <MessageCircleQuestion size={13} />
+              <b>{doubts.length}</b> Doubts active
+            </span>
+            <span className="podia-metric-chip amber">
+              <Calendar size={13} />
+              <b>{upcoming.length}</b> Study sessions
+            </span>
+            <span className="podia-metric-chip peach">
+              <Target size={13} />
+              <b>{targetCgpa}</b> Target CGPA
+            </span>
+          </div>
         </div>
-        <button className="ai-banner-cta-btn" onClick={(e) => { e.stopPropagation(); navigate('advisor'); }}>
-          <span>Open AI Planner</span>
-          <ChevronRight size={16} />
-        </button>
-      </div>
 
-      <div className="dashboard-grid">
-        <div className="panel activity">
-          <PanelHead title="Recent doubts in forum" action="View all" onClick={() => navigate('doubts')} />
-          {doubts.length === 0 ? (
-            <div className="empty-panel-state">
-              <MessageCircleQuestion size={24} />
-              <p>No questions posted yet</p>
-              <button className="create-task-inline-btn" onClick={() => navigate('doubts')}>
-                <Plus size={13} /> Ask a doubt
-              </button>
+        {/* Action launchpad */}
+        <div className="podia-home-launchpad">
+          <button className="podia-launch-btn primary" onClick={onQuickTask}>
+            <Plus size={16} />
+            <span>New Task</span>
+          </button>
+          <button
+            className="podia-launch-btn advisor-btn"
+            onClick={() => onNavigateAdvisor ? onNavigateAdvisor('Plan my next 48h study sprint') : navigate('advisor')}
+          >
+            <Sparkles size={15} />
+            <span>Ask AI Advisor</span>
+          </button>
+          <button className="podia-launch-btn secondary" onClick={onAskDoubt}>
+            <MessageCircleQuestion size={15} />
+            <span>Ask a Doubt</span>
+          </button>
+          <button className="podia-launch-btn secondary" onClick={() => navigate('planner')}>
+            <Calendar size={15} />
+            <span>Create Study Plan</span>
+          </button>
+        </div>
+      </section>
+
+      {/* 2. The 3 Iconic Podia Interactive Command Cards */}
+      <section className="podia-home-trio">
+        {/* CARD 1: Doubt Space › (Teal) */}
+        <div className="podia-preview-card preview-teal">
+          <div className="podia-card-top" onClick={() => navigate('doubts')} role="button" tabIndex={0}>
+            <div>
+              <h3 className="podia-card-title">
+                Doubt Space <ChevronRight size={18} className="podia-card-arrow" />
+              </h3>
+              <p className="podia-card-desc">
+                Peer campus Q&A, verified answers, upvotes & real-time answers.
+              </p>
             </div>
-          ) : (
-            doubts.slice(0, 3).map(d => (
-              <div className="doubt-row" key={d.id}>
-                <Avatar initials={d.initials || 'ST'} />
-                <div className="doubt-main">
-                  <div>
-                    <Pill>{d.subject}</Pill>
-                    <Pill tone="muted">{d.semester}</Pill>
-                    {d.resolved && <Pill tone="success">Solved</Pill>}
+          </div>
+
+          <div className="podia-mini-window">
+            <div className="podia-mini-window-bar">
+              <div className="mini-dots">
+                <span className="mini-dot red" />
+                <span className="mini-dot yellow" />
+                <span className="mini-dot green" />
+              </div>
+              <span className="mini-window-title">campuscore / forum</span>
+            </div>
+
+            <div className="podia-mini-content">
+              {doubts.length === 0 ? (
+                <div className="podia-mini-empty">
+                  <div className="mini-doubt-pill">Data Structures</div>
+                  <strong className="mini-doubt-title">AVL Tree double rotation proof explanation</strong>
+                  <div className="mini-doubt-meta">
+                    <span>by Varun Chaubey</span>
+                    <span className="mini-tag">12 answers</span>
                   </div>
-                  <strong>{d.title}</strong>
-                  <small>by {d.author} · {d.time || 'recently'}</small>
                 </div>
-                <div className="answer-count">
-                  <MessageCircleQuestion size={16} />
-                  <b>{d.answers?.length || 0}</b>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="panel agenda">
-          <PanelHead title="Coming up" action="View planner" onClick={() => navigate('planner')} />
-          {upcoming.length === 0 ? (
-            <div className="empty-panel-state">
-              <Calendar size={24} />
-              <p>No study sessions scheduled yet</p>
-              <button className="create-task-inline-btn" onClick={() => navigate('planner')}>
-                <Sparkles size={13} /> Build plan
+              ) : (
+                doubts.slice(0, 2).map((d) => (
+                  <div
+                    key={d.id}
+                    className="podia-mini-doubt-item"
+                    onClick={() => navigate('doubts')}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="mini-doubt-head">
+                      <span className="mini-doubt-pill">{d.subject || 'Coursework'}</span>
+                      {d.resolved ? (
+                        <span className="mini-resolved-badge">✓ Solved</span>
+                      ) : (
+                        <span className="mini-answers-badge">💬 {d.answers?.length || 0}</span>
+                      )}
+                    </div>
+                    <div className="mini-doubt-question">{d.title}</div>
+                    <div className="mini-doubt-sub">by {d.author} · {d.semester || 'Sem 3'}</div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="podia-mini-actions">
+              <button className="podia-mini-btn" onClick={onAskDoubt}>
+                <Plus size={13} />
+                <span>Ask a Doubt</span>
+              </button>
+              <button className="podia-mini-link" onClick={() => navigate('doubts')}>
+                <span>View all doubts</span>
+                <ChevronRight size={13} />
               </button>
             </div>
-          ) : (
-            upcoming.map((s, i) => (
-              <div className="agenda-row" key={i}>
-                <span className="date-box">
-                  <b>{new Date(s.date + 'T12:00').getDate() || (i + 1)}</b>
-                  <small>{new Date(s.date + 'T12:00').toLocaleDateString('en-US', { month: 'short' }).toUpperCase() || 'SES'}</small>
-                </span>
-                <div>
-                  <strong>{s.topic}</strong>
-                  <small>{s.subject} · {s.date}</small>
-                </div>
-                <Clock3 size={16} />
-              </div>
-            ))
-          )}
+          </div>
         </div>
-      </div>
-      <div className="panel pending-panel">
-        <PanelHead title="Tasks to keep moving" action="Open tasks" onClick={() => navigate('tasks')} />
-        {tasks.filter(t => t.status !== 'Completed').length === 0 ? (
-          <div className="empty-panel-state">
-            <CheckSquare size={24} />
-            <p>No pending tasks right now</p>
-            <button className="create-task-inline-btn" onClick={() => navigate('tasks')}>
-              <Plus size={13} /> Add task
+
+        {/* CARD 2: AI Workload Chat › (Amber) */}
+        <div className="podia-preview-card preview-amber">
+          <div
+            className="podia-card-top"
+            onClick={() => onNavigateAdvisor ? onNavigateAdvisor() : navigate('advisor')}
+            role="button"
+            tabIndex={0}
+          >
+            <div>
+              <h3 className="podia-card-title">
+                AI Workload Chat <ChevronRight size={18} className="podia-card-arrow" />
+              </h3>
+              <p className="podia-card-desc">
+                Gemini strategist analyzes deadline clusters and generates optimal sprints.
+              </p>
+            </div>
+          </div>
+
+          <div className="podia-mini-window">
+            <div className="podia-mini-window-bar">
+              <div className="mini-dots">
+                <span className="mini-dot red" />
+                <span className="mini-dot yellow" />
+                <span className="mini-dot green" />
+              </div>
+              <span className="mini-window-title">Gemini 2.5 Flash / Academic Engine</span>
+            </div>
+
+            <div className="podia-mini-content">
+              <div className="podia-ai-bubble">
+                <div className="podia-ai-badge">
+                  <Sparkles size={12} />
+                  <span>Gemini Strategist</span>
+                </div>
+                <p>
+                  {urgentCount > 0
+                    ? `⚠️ You have ${urgentCount} urgent deadline${urgentCount > 1 ? 's' : ''} in the danger zone. Let's create an emergency sprint!`
+                    : pendingTasks.length > 0
+                    ? `You have ${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}. I can break them into 45-min focus blocks for you.`
+                    : 'Your task queue is clear! Ready to build a 5-day exam revision roadmap?'}
+                </p>
+              </div>
+
+              <div className="podia-prompt-chips">
+                <button
+                  className="podia-prompt-chip"
+                  onClick={() => onNavigateAdvisor ? onNavigateAdvisor('Plan my next 48-hour study sprint based on my pending deadlines.') : navigate('advisor')}
+                >
+                  <Zap size={12} />
+                  <span>Plan 48h sprint</span>
+                </button>
+                <button
+                  className="podia-prompt-chip"
+                  onClick={() => onNavigateAdvisor ? onNavigateAdvisor('Help me prioritize my hardest coursework tasks using the Eisenhower Matrix.') : navigate('advisor')}
+                >
+                  <Target size={12} />
+                  <span>Prioritize hardest</span>
+                </button>
+                <button
+                  className="podia-prompt-chip"
+                  onClick={() => onNavigateAdvisor ? onNavigateAdvisor('Create 45-minute focus revision blocks with active recall exercises.') : navigate('advisor')}
+                >
+                  <Clock3 size={12} />
+                  <span>45-min focus blocks</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="podia-mini-actions">
+              <button
+                className="podia-mini-btn"
+                onClick={() => onNavigateAdvisor ? onNavigateAdvisor() : navigate('advisor')}
+              >
+                <Bot size={13} />
+                <span>Chat with Gemini</span>
+              </button>
+              <button
+                className="podia-mini-link"
+                onClick={() => onNavigateAdvisor ? onNavigateAdvisor() : navigate('advisor')}
+              >
+                <span>Open advisor</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 3: Task Manager › (Lavender) */}
+        <div className="podia-preview-card preview-lavender">
+          <div className="podia-card-top" onClick={() => navigate('tasks')} role="button" tabIndex={0}>
+            <div>
+              <h3 className="podia-card-title">
+                Task Manager <ChevronRight size={18} className="podia-card-arrow" />
+              </h3>
+              <p className="podia-card-desc">
+                Priority board, 24h urgent countdowns, and instant Firestore sync.
+              </p>
+            </div>
+          </div>
+
+          <div className="podia-mini-window">
+            <div className="podia-mini-window-bar">
+              <div className="mini-dots">
+                <span className="mini-dot red" />
+                <span className="mini-dot yellow" />
+                <span className="mini-dot green" />
+              </div>
+              <span className="mini-window-title">cloud firestore / live tasks</span>
+            </div>
+
+            <div className="podia-mini-content">
+              {pendingTasks.length === 0 ? (
+                <div className="podia-mini-empty">
+                  <CheckCircle2 size={24} style={{ color: '#10b981', margin: '0 auto 8px' }} />
+                  <p style={{ margin: 0, fontWeight: 600, color: '#090a0f' }}>All tasks conquered!</p>
+                  <small style={{ color: '#64748b' }}>You are completely caught up with coursework.</small>
+                </div>
+              ) : (
+                <div className="podia-mini-task-list">
+                  {pendingTasks.slice(0, 3).map((task) => (
+                    <div className="podia-mini-task-row" key={task.id}>
+                      <button
+                        className="podia-task-checkbox"
+                        title="Mark as completed"
+                        aria-label="Mark task done"
+                        onClick={() => onToggleTask && onToggleTask(task)}
+                      >
+                        <span className="podia-box-inner" />
+                      </button>
+                      <div className="podia-task-main" onClick={() => navigate('tasks')}>
+                        <span className="podia-task-title">{task.title}</span>
+                        <div className="podia-task-meta">
+                          <span className="podia-task-cat">{task.category || 'Assignment'}</span>
+                          {task.due && (
+                            <span className={`podia-task-due ${task.due === todayStr ? 'urgent' : ''}`}>
+                              {task.due === todayStr ? 'Due today' : `Due ${task.due}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {task.priority === 'High' && (
+                        <span className="podia-high-pill">High</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="podia-mini-actions">
+              <button className="podia-mini-btn" onClick={onQuickTask}>
+                <Plus size={13} />
+                <span>Add Task</span>
+              </button>
+              <button className="podia-mini-link" onClick={() => navigate('tasks')}>
+                <span>View all ({pendingTasks.length})</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Bottom Duo: Study Sprint Timetable & Academic Momentum */}
+      <section className="podia-home-duo">
+        {/* Left: Study Timetable */}
+        <div className="podia-section-card">
+          <div className="podia-section-header">
+            <div>
+              <h3>Today's Study Schedule & Roadmap</h3>
+              <p>Upcoming focus sessions generated by AI or scheduled by you.</p>
+            </div>
+            <button className="podia-text-link-btn" onClick={() => navigate('planner')}>
+              <span>View planner</span>
+              <ChevronRight size={14} />
             </button>
           </div>
-        ) : (
-          <div className="task-mini-grid">
-            {tasks.filter(t => t.status !== 'Completed').slice(0, 3).map(t => (
-              <div className="task-mini" key={t.id}>
-                <span className="check-dot" />
+
+          <div className="podia-timetable-body">
+            {upcoming.length === 0 ? (
+              <div className="podia-empty-inline">
+                <Calendar size={28} />
                 <div>
-                  <strong>{t.title}</strong>
-                  <small>Due {formatDate(t.due)}</small>
+                  <strong>No study sessions scheduled yet</strong>
+                  <p>Let Gemini build a customized 5-day study roadmap for your upcoming exams.</p>
                 </div>
-                <Pill tone="muted">{t.status}</Pill>
+                <button className="podia-btn-secondary" onClick={() => navigate('planner')}>
+                  <Sparkles size={14} />
+                  <span>Build study plan</span>
+                </button>
               </div>
-            ))}
+            ) : (
+              <div className="podia-sessions-stack">
+                {upcoming.map((s, idx) => (
+                  <div className="podia-session-row" key={idx}>
+                    <div className="podia-session-date">
+                      <b>{new Date(s.date + 'T12:00').getDate() || (idx + 1)}</b>
+                      <small>{new Date(s.date + 'T12:00').toLocaleDateString('en-US', { month: 'short' }).toUpperCase() || 'SES'}</small>
+                    </div>
+                    <div className="podia-session-details">
+                      <strong>{s.topic}</strong>
+                      <div className="podia-session-meta">
+                        <span className="session-sub-pill">{s.subject}</span>
+                        <span className="session-time"><Clock3 size={12} /> {s.date}</span>
+                      </div>
+                    </div>
+                    <button className="podia-session-action" onClick={() => navigate('planner')}>
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </>
+        </div>
+
+        {/* Right: Academic Momentum & Standing */}
+        <div className="podia-section-card">
+          <div className="podia-section-header">
+            <div>
+              <h3>Academic Momentum & Standing</h3>
+              <p>Peer reputation and coursework progress.</p>
+            </div>
+            <button className="podia-text-link-btn" onClick={() => navigate('profile')}>
+              <span>My Profile</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <div className="podia-momentum-body">
+            <div className="podia-rep-display">
+              <div className="podia-rep-big">
+                <span className="rep-num">{dynamicRep}</span>
+                <span className="rep-label">Reputation Points</span>
+              </div>
+              <div className="podia-rep-badges">
+                <span className="rep-chip">
+                  <CheckCircle2 size={12} /> {completedTasks.length} tasks cleared
+                </span>
+                <span className="rep-chip">
+                  <MessageCircleQuestion size={12} /> {userDoubts.length} questions asked
+                </span>
+                <span className="rep-chip">
+                  <Sparkles size={12} /> {totalAnswers} answers provided
+                </span>
+              </div>
+            </div>
+
+            <div className="podia-tip-box">
+              <div className="podia-tip-icon">✦</div>
+              <div>
+                <strong>Gemini Study Tip</strong>
+                <p>Spaced repetition with 45-minute focus intervals yields 35% higher concept retention for engineering coursework.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -863,10 +1165,16 @@ function DoubtSpace({ user, doubts, showDoubt, setShowDoubt, activeDoubt, setAct
       <div className="doubt-layout">
         <div className="doubt-list">
           {filtered.length === 0 ? (
-            <div className="task-empty" style={{ background: '#fff', borderRadius: 10 }}>
-              <span><MessageCircleQuestion size={24} /></span>
+            <div className="podia-doubt-empty">
+              <div className="podia-empty-icon-wrap">
+                <MessageCircleQuestion size={30} />
+              </div>
               <h2>No doubts found</h2>
-              <p>Be the first to post a question to the campus community.</p>
+              <p>Be the first to post a question to the campus community and earn rep points.</p>
+              <button className="podia-launch-btn primary" onClick={() => setShowDoubt(true)}>
+                <Plus size={16} />
+                <span>Ask the First Doubt</span>
+              </button>
             </div>
           ) : (
             filtered.map(d => (
@@ -898,12 +1206,30 @@ function DoubtSpace({ user, doubts, showDoubt, setShowDoubt, activeDoubt, setAct
             ))
           )}
         </div>
-        <aside className="info-card">
-          <span className="info-icon"><BookOpen size={21} /></span>
+        <aside className="podia-doubt-sidebar-card">
+          <div className="podia-doubt-sidebar-top">
+            <span className="podia-doubt-sidebar-icon">
+              <BookOpen size={20} />
+            </span>
+            <span className="podia-cloud-badge">
+              <span className="dot pulse" /> Live Firestore
+            </span>
+          </div>
           <h3>Firebase Cloud Persistence</h3>
-          <p>All doubts, upvotes, and verified answers are preserved in real-time Firestore database.</p>
-          <div><b>+10</b><small>for an accepted answer</small></div>
-          <div><b>+2</b><small>for every upvote</small></div>
+          <p>All doubts, peer upvotes, and verified answers are saved permanently in Firestore.</p>
+          <div className="podia-rep-rules">
+            <div className="podia-rep-rule-item teal">
+              <b>+10 pts</b>
+              <small>for an accepted answer</small>
+            </div>
+            <div className="podia-rep-rule-item amber">
+              <b>+2 pts</b>
+              <small>for every peer upvote</small>
+            </div>
+          </div>
+          <div className="podia-doubt-sidebar-footer">
+            <small>Peer solutions sync across all students in real time</small>
+          </div>
         </aside>
       </div>
       {showDoubt && (
